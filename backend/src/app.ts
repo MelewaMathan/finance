@@ -88,6 +88,9 @@ export function createApp(): express.Express {
       status: 'ok',
       service: 'secure-microfinance-api',
       chainMode: config.CHAIN_MODE,
+      // Deployed value of WEB_ORIGIN, so a CORS rejection can be traced to
+      // configuration instead of guessed at. Origins are not secrets.
+      webOrigin: config.WEB_ORIGIN,
       time: new Date().toISOString(),
     });
   });
