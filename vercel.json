@@ -5,7 +5,6 @@
       "root": "backend",
       "framework": "express",
       "buildCommand": "npm install && npm run build",
-      "startCommand": "npm run start",
       "bindings": [
         {
           "type": "service",
