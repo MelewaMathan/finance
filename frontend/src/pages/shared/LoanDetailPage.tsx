@@ -1,0 +1,767 @@
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import {
+  Alert,
+  Badge,
+  Card,
+  Field,
+  PageHeader,
+  Select,
+  Spinner,
+  StatCard,
+  TextInput,
+  VerifiedBadge,
+} from '../../components/ui';
+import { ApiError } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
+import { formatDate, formatDateTime, formatMoney, percentFromBps, shortHash } from '../../lib/format';
+import {
+  anchorLoanTransactions,
+  getLoanProof,
+  PROOF_LABEL,
+  PROOF_TONE,
+  type LoanProofReport,
+} from '../../lib/ledger';
+import {
+  flagTypeLabel,
+  listLoanFlags,
+  SEVERITY_TONE,
+  STATUS_TONE as FLAG_STATUS_TONE,
+  type FraudFlag,
+} from '../../lib/fraud';
+import {
+  decideLoan,
+  disburseLoan,
+  downloadAgreement,
+  downloadStatement,
+  FEATURE_LABEL,
+  getLoan,
+  recordRepayment,
+  rescoreLoan,
+  RISK_LABEL,
+  RISK_TONE,
+  STATUS_LABEL,
+  STATUS_TONE,
+  verifyLoan,
+  type LoanDetail,
+} from '../../lib/loans';
+
+const INSTALLMENT_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
+  pending: 'neutral',
+  partial: 'warning',
+  paid: 'success',
+  overdue: 'danger',
+  waived: 'info',
+};
+
+/**
+ * Loan detail, shared by the borrower and the lender. The action panel is
+ * derived from role + status, and the API independently enforces the same
+ * rules -- hiding a button is convenience, not security.
+ */
+export function LoanDetailPage() {
+  const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
+  const [loan, setLoan] = useState<LoanDetail | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const [ratePercent, setRatePercent] = useState('10');
+  const [decisionNote, setDecisionNote] = useState('');
+  const [method, setMethod] = useState<'cash' | 'mobile_money' | 'bank'>('cash');
+  const [mobileCode, setMobileCode] = useState('');
+
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState<'cash' | 'mobile_money' | 'bank'>('mobile_money');
+  const [payCode, setPayCode] = useState('');
+  const [payDate, setPayDate] = useState(new Date().toISOString().slice(0, 10));
+
+  const [proof, setProof] = useState<LoanProofReport | null>(null);
+  const [proofBusy, setProofBusy] = useState(false);
+  const [flags, setFlags] = useState<FraudFlag[]>([]);
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    try {
+      const detail = await getLoan(id);
+      setLoan(detail);
+      setRatePercent((detail.rateBps / 100).toFixed(2));
+      setLoadError(null);
+      // Flags are supplementary: a failure here must not hide the loan.
+      listLoanFlags(id)
+        .then(setFlags)
+        .catch(() => setFlags([]));
+    } catch (cause) {
+      setLoadError(cause instanceof ApiError ? cause.message : 'Could not load this loan');
+    }
+  }, [id]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function run(action: () => Promise<void>) {
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      await action();
+    } catch (cause) {
+      setActionError(cause instanceof ApiError ? cause.message : cause instanceof Error ? cause.message : 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verifyProof(loanId: string) {
+    setProofBusy(true);
+    try {
+      setProof(await getLoanProof(loanId));
+    } catch (cause) {
+      setActionError(cause instanceof ApiError ? cause.message : 'Could not verify this loan');
+    } finally {
+      setProofBusy(false);
+    }
+  }
+
+  if (loadError) {
+    return (
+      <div>
+        <PageHeader title="Loan" />
+        <Alert>{loadError}</Alert>
+        <Link to={user?.role === 'lender' ? '/lender/applications' : '/borrower/loans'} className="mt-4 inline-block text-sm font-semibold text-brand-700 hover:underline">
+          ← Back to loans
+        </Link>
+      </div>
+    );
+  }
+
+  if (!loan) return <Spinner label="Loading loan" />;
+
+  const isLender = user?.role === 'lender';
+  const canVerify = isLender && (loan.status === 'pending' || loan.status === 'under_review');
+  const canDecide = isLender && (loan.status === 'pending' || loan.status === 'under_review') && Boolean(loan.identityVerified);
+  const canDisburse = isLender && loan.status === 'approved';
+  const canPay = (user?.role === 'lender' || user?.role === 'borrower') && (loan.status === 'disbursed' || loan.status === 'active');
+  const backTo = isLender ? '/lender/applications' : '/borrower/loans';
+
+  // Advisory only: shown to inform the decision, never to make it.
+  const scoreCard = (
+    <Card
+      title="Credit score (advisory)"
+      description="Generated by the risk model. It never approves or rejects a loan on its own."
+    >
+      {loan.score ? (
+        <div className="space-y-3">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-3xl font-semibold text-ink-900">{loan.score.score}</p>
+              <p className="text-xs text-slate-500">out of 100 · higher is safer</p>
+            </div>
+            <Badge tone={RISK_TONE[loan.score.riskLevel]}>{RISK_LABEL[loan.score.riskLevel]}</Badge>
+          </div>
+          {loan.score.defaultProbability !== null ? (
+            <p className="text-xs text-slate-500">
+              Modelled default probability {(loan.score.defaultProbability * 100).toFixed(1)}%
+            </p>
+          ) : null}
+          {loan.score.explanation.length > 0 ? (
+            <ul className="space-y-1 text-xs text-slate-600">
+              {loan.score.explanation.slice(0, 4).map((factor) => (
+                <li key={factor.feature} className="flex items-center justify-between gap-2">
+                  <span>{FEATURE_LABEL[factor.feature] ?? factor.feature.replace(/_/g, ' ')}</span>
+                  <span className={factor.direction === 'risk' ? 'text-red-600' : 'text-emerald-600'}>
+                    {factor.direction === 'risk' ? 'raises risk' : 'lowers risk'}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="text-xs text-slate-400">
+            {loan.score.modelSource === 'ml_service'
+              ? `Model ${loan.score.modelVersion} · ${loan.score.latencyMs} ms`
+              : `Fallback heuristic (${loan.score.modelVersion}) — the ML service was unavailable.`}
+          </p>
+          {isLender ? (
+            <button
+              type="button"
+              className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  const score = await rescoreLoan(loan.id);
+                  setLoan({ ...loan, score });
+                  setNotice(`Re-scored: ${score.score}/100 (${RISK_LABEL[score.riskLevel]}).`);
+                })
+              }
+            >
+              Re-score
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <p className="text-sm text-slate-500">Not scored yet.</p>
+      )}
+    </Card>
+  );
+
+  // Flags are shown where the money is: a held payment must explain itself on
+  // the loan it belongs to, not only in a queue somewhere else.
+  const flagsCard =
+    flags.length > 0 ? (
+      <Card title="Fraud flags" description="Raised by the deterministic rules and by the anomaly model.">
+        <ul className="space-y-3">
+          {flags.map((flag) => (
+            <li key={flag.id} className="rounded-xl border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={SEVERITY_TONE[flag.severity]}>{flag.severity}</Badge>
+                <Badge tone={FLAG_STATUS_TONE[flag.status]}>{flag.status}</Badge>
+                {flag.transactionStatus === 'held' ? <Badge tone="warning">money on hold</Badge> : null}
+                <span className="text-sm font-medium text-slate-900">{flagTypeLabel(flag.flagType)}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Detected {formatDateTime(flag.createdAt)}
+                {flag.resolutionNote ? ` — “${flag.resolutionNote}”` : ''}
+              </p>
+            </li>
+          ))}
+        </ul>
+        {isLender ? (
+          <Link to="/lender/fraud" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
+            Open the review queue →
+          </Link>
+        ) : null}
+      </Card>
+    ) : null;
+
+  return (
+    <div>
+      <PageHeader
+        title={`Loan ${loan.ref}`}
+        subtitle={`${loan.purpose} · ${loan.lender.businessName ?? loan.lender.fullName}`}
+        actions={
+          <Link to={backTo} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+            Back
+          </Link>
+        }
+      />
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Badge tone={STATUS_TONE[loan.status]}>{STATUS_LABEL[loan.status]}</Badge>
+        {loan.identityVerified ? <Badge tone="success">Identity verified</Badge> : <Badge tone="warning">Identity not verified</Badge>}
+        {loan.agreement ? <Badge tone="info">Agreement sealed</Badge> : null}
+        {loan.flags.some((flag) => flag.status === 'open') ? <Badge tone="danger">Open fraud flag</Badge> : null}
+      </div>
+
+      {loan.heldReason ? (
+        <div className="mb-4">
+          <Alert tone="warning">
+            <strong>Held:</strong> {loan.heldReason}
+          </Alert>
+        </div>
+      ) : null}
+
+      {actionError ? (
+        <div className="mb-4">
+          <Alert>{actionError}</Alert>
+        </div>
+      ) : null}
+
+      {notice ? (
+        <div className="mb-4">
+          <Alert tone="info">{notice}</Alert>
+        </div>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Principal" value={formatMoney(loan.principalCents)} />
+        <StatCard label="Total repayable" value={formatMoney(loan.totalRepayableCents)} hint={`${percentFromBps(loan.rateBps)} × ${loan.termCount} ${loan.frequency}`} />
+        <StatCard
+          label="Outstanding"
+          value={formatMoney(loan.summary.outstandingCents)}
+          hint={loan.summary.installmentsTotal > 0 ? `${loan.summary.installmentsPaid}/${loan.summary.installmentsTotal} installments paid` : 'Schedule not issued yet'}
+          tone="brand"
+        />
+        <StatCard
+          label="Penalties accrued"
+          value={formatMoney(loan.summary.accruedPenaltyCents)}
+          hint="Applied to overdue installments"
+          tone={loan.summary.accruedPenaltyCents > 0 ? 'warning' : 'default'}
+        />
+      </div>
+
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <div className="space-y-5 lg:col-span-2">
+          {canVerify || canDecide || canDisburse ? (
+            <Card title={isLender ? 'Your decision' : 'Actions'}>
+              {canVerify ? (
+                <div className="flex flex-col gap-3 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900">Step 1 · Verify identity</p>
+                    <p className="text-xs text-slate-500">Confirm the national ID on file matches the person in front of you.</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-brand"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const updated = await verifyLoan(loan.id, 'Verified in person');
+                        setLoan(updated);
+                        setNotice('Identity verified. You can now approve with a final rate.');
+                      })
+                    }
+                  >
+                    Mark verified
+                  </button>
+                </div>
+              ) : null}
+
+              {canDecide ? (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm font-medium text-slate-900">Step 2 · Decide</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Interest rate (% per period)" htmlFor="rate">
+                      <TextInput
+                        id="rate"
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={0.5}
+                        value={ratePercent}
+                        onChange={(event) => setRatePercent(event.target.value)}
+                      />
+                    </Field>
+                    <Field label="Note (optional)" htmlFor="note">
+                      <TextInput id="note" value={decisionNote} onChange={(event) => setDecisionNote(event.target.value)} />
+                    </Field>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn-brand"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await decideLoan(loan.id, {
+                            decision: 'approve',
+                            rateBps: Math.round(Number(ratePercent) * 100),
+                            note: decisionNote || undefined,
+                          });
+                          setLoan(updated);
+                          setNotice('Approved. The agreement PDF is sealed with a SHA-256 fingerprint.');
+                        })
+                      }
+                    >
+                      Approve and issue agreement
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await decideLoan(loan.id, { decision: 'reject', note: decisionNote || undefined });
+                          setLoan(updated);
+                          setNotice('Application rejected.');
+                        })
+                      }
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {canDisburse ? (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm font-medium text-slate-900">Step 3 · Disburse</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Field label="Method" htmlFor="method">
+                      <Select id="method" value={method} onChange={(event) => setMethod(event.target.value as typeof method)}>
+                        <option value="cash">Cash</option>
+                        <option value="mobile_money">Mobile money</option>
+                        <option value="bank">Bank transfer</option>
+                      </Select>
+                    </Field>
+                    {method === 'mobile_money' ? (
+                      <Field label="Mobile-money reference" htmlFor="code" hint="10 characters, e.g. SJ21AB3XYZ">
+                        <TextInput
+                          id="code"
+                          value={mobileCode}
+                          onChange={(event) => setMobileCode(event.target.value.toUpperCase())}
+                          placeholder="SJ21AB3XYZ"
+                        />
+                      </Field>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-brand"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const result = await disburseLoan(loan.id, {
+                          method,
+                          mobileTxnCode: method === 'mobile_money' ? mobileCode : undefined,
+                        });
+                        setLoan(result.loan);
+                        setNotice(
+                          result.held
+                            ? `Payment held: ${result.reason ?? 'fraud review required'}`
+                            : result.anchored
+                              ? 'Disbursed and anchored on-chain.'
+                              : 'Disbursed. The ledger is not configured, so the record is stored unanchored.',
+                        );
+                      })
+                    }
+                  >
+                    Release {formatMoney(loan.principalCents)}
+                  </button>
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
+
+          <Card
+            title="Repayment schedule"
+            description={loan.installments.length === 0 ? 'A schedule is generated when the lender approves.' : `${loan.frequency} installments, flat interest per period.`}
+          >
+            {loan.installments.length === 0 ? (
+              <p className="text-sm text-slate-500">Not issued yet.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="py-2 pr-3 font-semibold">#</th>
+                      <th className="py-2 pr-3 font-semibold">Due</th>
+                      <th className="py-2 pr-3 font-semibold">Principal</th>
+                      <th className="py-2 pr-3 font-semibold">Interest</th>
+                      <th className="py-2 pr-3 font-semibold">Penalty</th>
+                      <th className="py-2 pr-3 font-semibold">Paid</th>
+                      <th className="py-2 font-semibold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {loan.installments.map((row) => (
+                      <tr key={row.id}>
+                        <td className="py-2 pr-3 text-slate-500">{row.seq}</td>
+                        <td className="py-2 pr-3">{formatDate(row.dueDate)}</td>
+                        <td className="py-2 pr-3">{formatMoney(row.principalDueCents)}</td>
+                        <td className="py-2 pr-3">{formatMoney(row.interestDueCents)}</td>
+                        <td className="py-2 pr-3">{formatMoney(row.penaltyAccruedCents)}</td>
+                        <td className="py-2 pr-3">{formatMoney(row.paidCents)}</td>
+                        <td className="py-2">
+                          <Badge tone={INSTALLMENT_TONE[row.status] ?? 'neutral'}>{row.status}</Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Card>
+
+          {canPay ? (
+            <Card title="Record a payment" description="Cash received by the lender, or a mobile-money payment the borrower is claiming.">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Amount (KES)" htmlFor="payAmount" hint={`Outstanding ${formatMoney(loan.summary.outstandingCents)}`}>
+                  <TextInput
+                    id="payAmount"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={payAmount}
+                    onChange={(event) => setPayAmount(event.target.value)}
+                  />
+                </Field>
+                <Field label="Date received" htmlFor="payDate">
+                  <TextInput id="payDate" type="date" value={payDate} onChange={(event) => setPayDate(event.target.value)} />
+                </Field>
+                <Field label="Method" htmlFor="payMethod">
+                  <Select id="payMethod" value={payMethod} onChange={(event) => setPayMethod(event.target.value as typeof payMethod)}>
+                    <option value="mobile_money">Mobile money</option>
+                    <option value="cash">Cash</option>
+                    <option value="bank">Bank</option>
+                  </Select>
+                </Field>
+                {payMethod === 'mobile_money' ? (
+                  <Field label="Mobile-money reference" htmlFor="payCode" hint="10 characters, unique per payment">
+                    <TextInput
+                      id="payCode"
+                      value={payCode}
+                      onChange={(event) => setPayCode(event.target.value.toUpperCase())}
+                      placeholder="SJ21AB3XYZ"
+                    />
+                  </Field>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                className="btn-brand mt-4"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    const result = await recordRepayment(loan.id, {
+                      amountCents: Math.round(Number(payAmount) * 100),
+                      method: payMethod,
+                      mobileTxnCode: payMethod === 'mobile_money' ? payCode : undefined,
+                      occurredAt: payDate ? new Date(`${payDate}T12:00:00Z`).toISOString() : undefined,
+                    });
+                    setLoan(result.loan);
+                    setPayAmount('');
+                    setPayCode('');
+                    setNotice(
+                      result.held
+                        ? `Payment held: ${result.reason ?? 'fraud review required'}`
+                        : result.loan.status === 'settled'
+                          ? 'Payment applied. This loan is now settled.'
+                          : 'Payment applied to the schedule.',
+                    );
+                  })
+                }
+              >
+                Record payment
+              </button>
+              <p className="mt-2 text-xs text-slate-400">
+                Allocated penalties first, then interest, then principal. A reused receipt is held, not applied.
+              </p>
+            </Card>
+          ) : null}
+
+          <Card title="Money movements" description="Each row carries a canonical payload hash; the badge turns green only when the chain confirms it.">
+            {loan.transactions.length === 0 ? (
+              <p className="text-sm text-slate-500">Nothing has moved yet.</p>
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {loan.transactions.map((txn) => (
+                  <li key={txn.id} className="flex flex-col gap-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-sm font-medium capitalize text-slate-900">{txn.type}</span>
+                        <Badge tone={txn.status === 'cleared' ? 'success' : txn.status === 'held' ? 'danger' : 'warning'}>{txn.status}</Badge>
+                        <VerifiedBadge verified={txn.onchain.verified} />
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {formatDateTime(txn.occurredAt)} · {txn.method.replace('_', ' ')}
+                        {txn.mobileTxnCode ? ` · ${txn.mobileTxnCode}` : ''}
+                      </p>
+                      <p className="mt-1 font-mono text-xs text-slate-400" title={txn.hash ?? undefined}>
+                        {shortHash(txn.hash, 10)}
+                      </p>
+                      {txn.holdReason ? <p className="mt-1 text-xs text-red-600">{txn.holdReason}</p> : null}
+                    </div>
+                    <p className="text-sm font-semibold text-slate-900">{formatMoney(txn.amountCents)}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          <Card
+            title="Blockchain proof"
+            description="Recomputes each payment hash from the database and, when the ledger is reachable, checks it against the chain."
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <button type="button" className="btn-brand" disabled={proofBusy} onClick={() => void verifyProof(loan.id)}>
+                {proofBusy ? 'Checking…' : 'Verify against ledger'}
+              </button>
+              {proof ? (
+                <Badge tone={proof.ok ? 'success' : 'danger'}>
+                  {proof.summary.verified} verified · {proof.summary.anchoredUnchecked} unchecked ·{' '}
+                  {proof.summary.unanchored} unanchored · {proof.summary.broken} broken
+                </Badge>
+              ) : null}
+            </div>
+
+            {proof ? (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs text-slate-500">
+                  {proof.chain.enabled
+                    ? proof.chain.live
+                      ? `Chain ${proof.chain.mode} · ${proof.chain.recordCount ?? 0} records anchored · block ${proof.chain.latestBlock ?? '?'}`
+                      : 'A contract is configured but the node is unreachable; anchored proofs cannot be confirmed.'
+                    : 'No contract is configured, so every payment is stored unanchored. The page says so rather than showing a green badge.'}
+                </p>
+                <p className="break-all font-mono text-xs text-slate-400">loan ref → {proof.loanRefHash}</p>
+                {proof.proofs.length === 0 ? (
+                  <p className="text-sm text-slate-500">Nothing to prove yet.</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {proof.proofs.map((entry) => (
+                      <li key={entry.transactionId} className="py-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-sm font-medium capitalize text-slate-900">
+                            {entry.type} · {formatMoney(entry.amountCents)}
+                          </span>
+                          <Badge tone={PROOF_TONE[entry.state]}>{PROOF_LABEL[entry.state]}</Badge>
+                        </div>
+                        <p className="mt-1 font-mono text-xs text-slate-400" title={entry.recordedHash ?? undefined}>
+                          {shortHash(entry.recordedHash, 12)}
+                        </p>
+                        {entry.problem ? <p className="mt-1 text-xs text-red-600">{entry.problem}</p> : null}
+                        {entry.onChain ? (
+                          <p className="mt-1 text-xs text-slate-500">
+                            anchored {formatDateTime(entry.onChain.recordedAt)}
+                            {entry.onChain.block ? ` · block ${entry.onChain.block}` : ''}
+                          </p>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {isLender && proof.summary.unanchored > 0 ? (
+                  <button
+                    type="button"
+                    className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                    disabled={proofBusy || busy}
+                    onClick={() =>
+                      run(async () => {
+                        const result = await anchorLoanTransactions(loan.id);
+                        setProof(await getLoanProof(loan.id));
+                        setNotice(
+                          result.anchored > 0
+                            ? `${result.anchored} payment(s) anchored on-chain.`
+                            : 'Nothing could be anchored; check the ledger configuration.',
+                        );
+                      })
+                    }
+                  >
+                    Retry anchoring
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <p className="mt-3 text-sm text-slate-500">
+                Run the check to see whether this loan&apos;s payments still match their proofs.
+              </p>
+            )}
+          </Card>
+        </div>
+
+        <div className="space-y-5">
+          {scoreCard}
+          {flagsCard}
+
+          <Card title="Agreement">
+            {loan.agreement ? (
+              <div className="space-y-3">
+                <p className="text-sm text-slate-600">The PDF is sealed with a fingerprint stored with the loan.</p>
+                <p className="break-all font-mono text-xs text-slate-500">{loan.agreement.sha256}</p>
+                <button
+                  type="button"
+                  className="btn-brand w-full"
+                  disabled={busy}
+                  onClick={() =>
+                    run(async () => {
+                      await downloadAgreement(loan.id, loan.ref);
+                    })
+                  }
+                >
+                  Download PDF
+                </button>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Generated when the lender approves.</p>
+            )}
+          </Card>
+
+          <Card title="Statements">
+            <p className="text-sm text-slate-600">A statement snapshots the schedule, payments and totals at the moment you download it.</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await downloadStatement(loan.id, loan.ref, 'pdf');
+                  })
+                }
+              >
+                Statement PDF
+              </button>
+              <button
+                type="button"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+                disabled={busy}
+                onClick={() =>
+                  run(async () => {
+                    await downloadStatement(loan.id, loan.ref, 'csv');
+                  })
+                }
+              >
+                Statement CSV
+              </button>
+            </div>
+          </Card>
+
+          <Card title="Parties and terms">
+            <dl className="space-y-3 text-sm">
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Borrower</dt>
+                <dd className="text-right font-medium">{loan.borrower.fullName}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Lender</dt>
+                <dd className="text-right font-medium">{loan.lender.businessName ?? loan.lender.fullName}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Applied</dt>
+                <dd className="text-right">{formatDate(loan.createdAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Decided</dt>
+                <dd className="text-right">{formatDate(loan.decidedAt)}</dd>
+              </div>
+              <div className="flex justify-between gap-3">
+                <dt className="text-slate-500">Disbursed</dt>
+                <dd className="text-right">{formatDate(loan.disbursedAt)}</dd>
+              </div>
+              {loan.collateralDesc ? (
+                <div className="border-t border-slate-100 pt-3">
+                  <dt className="text-slate-500">Collateral</dt>
+                  <dd className="mt-1 text-slate-700">{loan.collateralDesc}</dd>
+                </div>
+              ) : null}
+              {loan.guarantor ? (
+                <div className="border-t border-slate-100 pt-3">
+                  <dt className="text-slate-500">Guarantor</dt>
+                  <dd className="mt-1 text-slate-700">
+                    {loan.guarantor.name ?? '—'} · {loan.guarantor.phoneMasked ?? 'no phone'}
+                    {loan.guarantor.credit !== null ? ` · credit ${loan.guarantor.credit}` : ''}
+                  </dd>
+                </div>
+              ) : null}
+              {loan.decisionNote ? (
+                <div className="border-t border-slate-100 pt-3">
+                  <dt className="text-slate-500">Lender note</dt>
+                  <dd className="mt-1 text-slate-700">{loan.decisionNote}</dd>
+                </div>
+              ) : null}
+            </dl>
+          </Card>
+
+          {loan.flags.length > 0 ? (
+            <Card title="Fraud flags">
+              <ul className="space-y-2 text-sm">
+                {loan.flags.map((flag) => (
+                  <li key={flag.id} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-700">{flag.flag_type.replace(/_/g, ' ')}</span>
+                    <span className="flex items-center gap-2">
+                      <Badge tone={flag.severity === 'critical' || flag.severity === 'high' ? 'danger' : 'warning'}>{flag.severity}</Badge>
+                      <Badge tone={flag.status === 'open' ? 'warning' : 'success'}>{flag.status}</Badge>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}

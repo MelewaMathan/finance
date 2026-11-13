@@ -1,0 +1,5 @@
+- Authentication state flows through a React Context (`AuthProvider` / `useAuth`) rather than props, with status values `'loading' | 'authenticated' | 'anonymous'` driving loading screens and redirects.
+- Route-level authorization is implemented as declarative HOCs (`RequireAuth`, `RequireRole`) wrapping route elements instead of imperative guards inside components.
+- All HTTP calls go through the typed `api<T>()` helper in `lib/api.ts`, which centralizes Bearer token injection, credentials handling, error mapping to `ApiError`, and automatic 401 retry via a single in-flight refresh request.
+- Access tokens are kept in module-scoped memory only — they are never persisted to localStorage/sessionStorage, relying on httpOnly refresh cookies for persistence.
+- Pages are organized by role under `src/pages/{borrower,lender,auditor}/` with a dedicated dashboard component per role, and placeholder routes use the shared `ComingSoon` component to document future build steps.

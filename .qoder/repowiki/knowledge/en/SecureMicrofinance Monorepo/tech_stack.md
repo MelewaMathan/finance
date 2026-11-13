@@ -1,0 +1,1 @@
+Node.js ≥20 with npm workspaces; concurrently for parallel dev servers; embedded-postgres for local DB without Docker; docker-compose (PostgreSQL 16 Alpine) for server/CI deployment.

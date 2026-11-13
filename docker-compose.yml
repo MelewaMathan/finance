@@ -1,0 +1,64 @@
+# Local stack: PostgreSQL + API + web client.
+#
+# On this machine Docker is not installed, so the repo also ships
+# `npm run db:up` (embedded PostgreSQL binaries). Compose is the path used on
+# a server / CI and matches the AWS deployment guide in docs/.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: secure_microfinance
+    ports:
+      - '55432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d secure_microfinance']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      API_PORT: '4000'
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/secure_microfinance
+      # Inside compose the browser talks to the web container, not to :5173.
+      # Deliberately not ${WEB_ORIGIN}: that variable is usually still the dev
+      # value in .env, and compose interpolates from .env automatically -- using
+      # it here would make the API reject the :8080 origin.
+      WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Signed agreements and generated exports outlive the container.
+      - storage:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:4000/api/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '8080:80'
+
+volumes:
+  pgdata:
+  storage:

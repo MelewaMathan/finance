@@ -1,0 +1,1 @@
+React 19 + TypeScript + Vite 8 + react-router-dom 7 + Tailwind CSS 3 + PostCSS/Autoprefixer; served in production by nginx 1.27-alpine behind a multi-stage Docker build.

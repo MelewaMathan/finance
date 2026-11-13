@@ -1,0 +1,1 @@
+`npm run db:migrate` / `db:seed` / `db:reset` drive schema lifecycle; `npm test` runs Vitest against a live PostgreSQL database configured by `test/global-setup.ts` which rebuilds the schema from migrations on every run (no mocks).

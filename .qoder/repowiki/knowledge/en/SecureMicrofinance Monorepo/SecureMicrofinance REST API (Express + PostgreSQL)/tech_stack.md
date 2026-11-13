@@ -1,0 +1,1 @@
+Express 5, TypeScript 5, PostgreSQL via `pg` (parameterised queries only), Zod v4 for input validation, bcryptjs for password hashing, jsonwebtoken for access tokens, ethers.js for optional blockchain chain mode, vitest + supertest for integration tests, tsx for dev/repl execution.

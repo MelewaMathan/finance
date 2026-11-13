@@ -1,0 +1,20 @@
+{
+  "model_version": "anomaly-if-v1.0.0",
+  "trained_at": "2026-11-12T10:15:19.100577+00:00",
+  "rows": 6000,
+  "contamination": 0.04,
+  "false_positive_rate": 0.04066666666666666,
+  "synthetic_detection_rate": 1.0,
+  "threshold": -0.5536363228717588,
+  "features": [
+    "log_amount",
+    "amount_ratio",
+    "hour_of_day",
+    "txns_24h",
+    "distinct_codes_24h",
+    "days_since_previous",
+    "loan_paid_ratio"
+  ],
+  "python": "3.11.9",
+  "sklearn": "1.5.2"
+}

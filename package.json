@@ -1,0 +1,38 @@
+{
+  "name": "secure-microfinance",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Blockchain-backed microfinance prototype for private moneylenders (security-focused university project)",
+  "workspaces": [
+    "backend",
+    "frontend",
+    "contracts"
+  ],
+  "scripts": {
+    "db:up": "node scripts/dev-db.mjs start",
+    "db:down": "node scripts/dev-db.mjs stop",
+    "db:status": "node scripts/dev-db.mjs status",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:seed": "npm --workspace backend run db:seed",
+    "db:reset": "npm --workspace backend run db:reset",
+    "dev:api": "npm --workspace backend run dev",
+    "dev:web": "npm --workspace frontend run dev",
+    "dev:chain": "npm --workspace contracts run node",
+    "dev:all": "concurrently -k -n api,web -c green,magenta \"npm:dev:api\" \"npm:dev:web\"",
+    "smoke": "node scripts/smoke-api.mjs",
+    "seed:demo": "npm --workspace backend run db:reset",
+    "contract:test": "npm --workspace contracts test",
+    "contract:deploy": "npm --workspace contracts run deploy",
+    "test": "npm --workspace backend test",
+    "test:all": "npm --workspace backend test && npm --workspace contracts test",
+    "typecheck": "npm --workspace backend run typecheck && npm --workspace frontend run typecheck",
+    "build": "npm --workspace backend run build && npm --workspace frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "embedded-postgres": "^18.1.0-beta.16"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

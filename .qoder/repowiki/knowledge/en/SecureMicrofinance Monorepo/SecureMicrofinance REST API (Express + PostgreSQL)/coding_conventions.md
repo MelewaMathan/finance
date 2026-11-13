@@ -1,0 +1,5 @@
+- Route handlers are thin: they validate input via the shared `validate(schema)` middleware, call a domain service function, and return JSON — all business logic lives in `*.service.ts` files.
+- Input schemas are declared inline with Zod and passed to the `validate` middleware, which replaces the raw source (`body`/`query`/`params`) with the parsed value so downstream code sees typed data.
+- Database access goes exclusively through `src/db/pool.ts` helpers (`query`, `queryOne`, `withTransaction`) using positional `$n` parameters — no string interpolation of user input.
+- Cross-request metadata (client IP, user agent, request id) is propagated via the `requestContext` middleware and consumed through helper getters rather than being threaded through function arguments.
+- Errors are raised as thrown objects from `lib/errors` (e.g. `unauthorized(...)`) and surfaced uniformly by the top-level `errorHandler` middleware.

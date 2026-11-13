@@ -1,0 +1,1 @@
+Dev server runs on port 5173 and proxies `/api` to `http://127.0.0.1:4000` (the Express API) so SameSite=Strict cookies work without CORS. Production container is built via `npm --workspace frontend run build` inside the repo's root Dockerfile and served by nginx from `/usr/share/nginx/html`.

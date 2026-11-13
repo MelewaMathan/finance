@@ -1,0 +1,43 @@
+{
+  "model_version": "credit-gb-v1.0.0",
+  "trained_at": "2026-11-12T09:59:00.499839+00:00",
+  "rows": 8000,
+  "default_rate": 0.269875,
+  "roc_auc": 0.8153919330289192,
+  "accuracy": 0.786,
+  "brier": 0.14637203550783384,
+  "confusion": {
+    "tn": 1341,
+    "fp": 119,
+    "fn": 309,
+    "tp": 231
+  },
+  "score_mean": 73.9555,
+  "score_buckets": {
+    "high_risk": 284,
+    "medium_risk": 367,
+    "low_risk": 1349
+  },
+  "thresholds": {
+    "low_min": 70,
+    "medium_min": 45
+  },
+  "feature_importance": {
+    "principal_to_income": 0.1589791984871539,
+    "installment_to_income": 0.08512697707978185,
+    "term_count": 0.15593252509532818,
+    "rate_bps": 0.05111697840303991,
+    "is_daily": 0.017180877811372133,
+    "prior_loans": 0.0034767187675924576,
+    "prior_settled": 0.007923732258519308,
+    "prior_defaults": 0.12138595239919402,
+    "arrears_ratio": 0.1686354741945666,
+    "active_loans": 0.06406295859928729,
+    "has_collateral": 0.02879189739918875,
+    "has_guarantor": 0.022146831679429376,
+    "guarantor_credit": 0.07816687547622869,
+    "account_age_days": 0.03707300234931756
+  },
+  "python": "3.11.9",
+  "sklearn": "1.5.2"
+}

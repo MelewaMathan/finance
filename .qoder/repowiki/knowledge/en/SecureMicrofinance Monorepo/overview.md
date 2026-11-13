@@ -1,0 +1,1 @@
+NPM workspaces monorepo wiring the Express backend, React frontend, and Hardhat Solidity contracts behind a shared .env contract and docker-compose stack.

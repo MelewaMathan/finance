@@ -1,0 +1,1 @@
+`npm run db:up|down|status` boots/stops the embedded Postgres instance used by both backend and tests; `npm run dev:all` starts API and web concurrently; `npm run test:all` runs backend + contract suites; `npm run typecheck` runs TypeScript checks across backend and frontend.

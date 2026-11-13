@@ -1,0 +1,1281 @@
+openapi: 3.0.3
+info:
+  title: SecureMicrofinance API
+  version: 0.1.0
+  description: >
+    REST API for a blockchain-backed microfinance prototype for private
+    moneylenders. Sensitive borrower data stays off-chain and encrypted;
+    only transaction hashes and timestamps are written to the ledger.
+  contact:
+    name: SecureMicrofinance project team
+servers:
+  - url: /api
+    description: API root; versioned endpoints live under /v1
+tags:
+  - name: health
+  - name: auth
+  - name: profile
+  - name: loans
+  - name: repayments
+  - name: scoring
+  - name: ledger
+  - name: fraud
+  - name: audit
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      security: []
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  service: { type: string, example: secure-microfinance-api }
+                  chainMode: { type: string, enum: [local, amoy, off] }
+                  time: { type: string, format: date-time }
+
+  /v1/auth/register:
+    post:
+      tags: [auth]
+      summary: Create a borrower or lender account
+      description: >
+        Auditors cannot self-register; they are provisioned by an administrator.
+        Returns a 15-minute access token and sets an httpOnly refresh cookie.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, fullName, role]
+              properties:
+                email: { type: string, format: email, example: borrower@smf.demo }
+                password:
+                  type: string
+                  minLength: 10
+                  maxLength: 128
+                  description: At least 10 characters, must contain a letter and a digit
+                  example: Passw0rd!demo
+                fullName: { type: string, example: Grace Wanjiku }
+                role: { type: string, enum: [borrower, lender] }
+                businessName: { type: string, description: Lenders only }
+      responses:
+        '201':
+          description: Account created
+          headers:
+            Set-Cookie:
+              description: smf_refresh — httpOnly, SameSite=Strict, Path=/api/v1/auth
+              schema: { type: string }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409':
+          description: Email already registered
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange credentials for an access token and refresh cookie
+      description: >
+        Unknown emails and wrong passwords return the same generic message so
+        the endpoint cannot be used to enumerate accounts. Five consecutive
+        failures lock the account for 15 minutes (HTTP 423).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200':
+          description: Authenticated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '423':
+          description: Account temporarily locked
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      summary: Rotate the refresh token and get a new access token
+      description: >
+        Uses the httpOnly cookie only. Every call rotates the token; replaying
+        a superseded token revokes the whole token family (reuse detection).
+        A double-submit inside the concurrency grace window is treated as a
+        second browser tab, not as theft.
+      security: []
+      responses:
+        '200':
+          description: Rotated
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Session' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the current refresh token and clear the cookie
+      security: []
+      responses:
+        '204': { description: Logged out }
+
+  /v1/auth/me:
+    get:
+      tags: [auth]
+      summary: Current user plus profile summary
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Session subject
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/PublicUser' }
+                  profile: { $ref: '#/components/schemas/ProfileSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/auth/password:
+    patch:
+      tags: [auth]
+      summary: Change password and revoke all sessions
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string }
+                newPassword: { type: string, minLength: 10 }
+      responses:
+        '200': { description: Password updated, sessions revoked }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/me/profile:
+    get:
+      tags: [profile]
+      summary: Read own profile (sensitive values masked)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Profile summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: '#/components/schemas/ProfileSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    put:
+      tags: [profile]
+      summary: Update a borrower profile
+      description: >
+        National ID and phone are encrypted with AES-256-GCM and blind-indexed
+        (HMAC-SHA256) so duplicate identities can be detected without
+        decryption. Auditors are read-only; lenders have no borrower profile.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nationalId: { type: string, minLength: 5, maxLength: 32, example: '23456789' }
+                phone: { type: string, minLength: 9, maxLength: 20, example: '0712 345 678' }
+                occupation: { type: string, maxLength: 80, example: Tailor }
+                monthlyIncomeCents: { type: integer, minimum: 0, example: 4200000 }
+                dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '1994-04-18' }
+                address: { type: string, maxLength: 200, example: 'Kawangware, Nairobi' }
+      responses:
+        '200':
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile: { $ref: '#/components/schemas/ProfileSummary' }
+                  message: { type: string }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: Auditors are read-only, lenders have no borrower profile
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/lenders:
+    get:
+      tags: [loans]
+      summary: Lenders a borrower may apply to
+      description: Active lender accounts with their business name and default terms.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Lender options
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: { type: string, format: uuid }
+                        fullName: { type: string }
+                        businessName: { type: string, nullable: true }
+                        defaultRateBps: { type: integer, nullable: true }
+                        maxPrincipalCents: { type: integer, nullable: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/loans:
+    post:
+      tags: [loans]
+      summary: Apply for a loan (borrower only)
+      description: >
+        Creates the application, generates the repayment schedule from the
+        lender's default rate and runs the rapid-application rule. The loan
+        starts in `pending`; nothing moves until the lender verifies identity,
+        approves, and disburses.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [lenderId, principalCents, termCount, frequency, purpose]
+              properties:
+                lenderId: { type: string, format: uuid }
+                principalCents: { type: integer, minimum: 1, example: 500000 }
+                termCount: { type: integer, minimum: 1, maximum: 365, example: 4 }
+                frequency: { type: string, enum: [daily, weekly, monthly] }
+                purpose: { type: string, example: Restock my shop }
+                collateralDesc: { type: string }
+                guarantorName: { type: string }
+                guarantorPhone: { type: string }
+                guarantorCredit: { type: integer, minimum: 0, maximum: 100 }
+      responses:
+        '201':
+          description: Application created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    get:
+      tags: [loans]
+      summary: List loans visible to the caller
+      description: A borrower sees their own applications; a lender sees their book; an auditor sees everything.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [pending, under_review, approved, rejected, held, disbursed, active, settled, defaulted, cancelled] }
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: A page of loans
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Loan' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/loans/{id}:
+    get:
+      tags: [loans]
+      summary: One loan with its schedule, payments and party details
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Loan detail
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/loans/{id}/verify:
+    post:
+      tags: [loans]
+      summary: Record that the lender checked the borrower's identity (lender only)
+      description: Moves the loan to `under_review` and is audited with the note.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note: { type: string, maxLength: 500, example: ID checked in person }
+      responses:
+        '200':
+          description: Identity verified
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/loans/{id}/decision:
+    post:
+      tags: [loans]
+      summary: Approve or reject an application (lender only)
+      description: >
+        Approval regenerates the schedule at the agreed rate, renders the PDF
+        agreement and stores its SHA-256 on the loan. Rejection is terminal.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision]
+              properties:
+                decision: { type: string, enum: [approve, reject] }
+                rateBps: { type: integer, minimum: 0, maximum: 10000, example: 1000 }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Decision recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/loans/{id}/disburse:
+    post:
+      tags: [loans]
+      summary: Release the money (lender only)
+      description: >
+        Runs both fraud layers before any money moves. `held: true` means the
+        disbursement exists but is parked for review; the loan stays `approved`
+        so the lender can retry or reject through the hold decision endpoint.
+        A cleared disbursement is anchored on-chain and audited.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [method]
+              properties:
+                method: { type: string, enum: [cash, mobile_money, bank] }
+                mobileTxnCode: { type: string, description: Required for mobile_money; 10 alphanumerics }
+                occurredAt: { type: string, format: date-time }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '200':
+          description: Disbursement recorded (cleared or held)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+                  held: { type: boolean }
+                  anchored: { type: boolean }
+                  reason: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/loans/{id}/agreement:
+    get:
+      tags: [loans]
+      summary: Download the signed agreement PDF
+      description: The response carries the document SHA-256 in `X-Document-SHA256`; the download is audited.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: PDF agreement
+          headers:
+            X-Document-SHA256:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/loans/{id}/repayments:
+    post:
+      tags: [repayments]
+      summary: Record a repayment (borrower or lender)
+      description: >
+        Allocates the amount across installments (penalty, then interest, then
+        principal) inside one transaction with row locks, so two concurrent
+        payments cannot overpay. 201 = applied; 202 = recorded but held by
+        fraud review (`held: true`) and not yet applied to the schedule.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountCents, method]
+              properties:
+                amountCents: { type: integer, minimum: 1, example: 50000 }
+                method: { type: string, enum: [cash, mobile_money, bank] }
+                mobileTxnCode: { type: string }
+                occurredAt: { type: string, format: date-time }
+                note: { type: string, maxLength: 500 }
+      responses:
+        '201':
+          description: Repayment applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+                  held: { type: boolean, example: false }
+                  settled: { type: boolean }
+        '202':
+          description: Recorded but held for fraud review
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan: { $ref: '#/components/schemas/Loan' }
+                  held: { type: boolean, example: true }
+                  reason: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422':
+          description: Amount exceeds what is outstanding
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/loans/{id}/statement:
+    get:
+      tags: [repayments]
+      summary: Loan statement as JSON
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Statement with every installment and payment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statement: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/loans/{id}/statement.pdf:
+    get:
+      tags: [repayments]
+      summary: Loan statement as PDF
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: PDF statement
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/loans/{id}/statement.csv:
+    get:
+      tags: [repayments]
+      summary: Loan statement as CSV
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: CSV statement (RFC 4180 quoting, amounts as decimals)
+          content:
+            text/csv:
+              schema: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/loans/{id}/score:
+    get:
+      tags: [scoring]
+      summary: Latest advisory credit score for a loan
+      description: Visible to the borrower, the lender and auditors; null before the first run.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Score or null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score: { allOf: [{ $ref: '#/components/schemas/CreditScore' }], nullable: true }
+                  model:
+                    type: object
+                    nullable: true
+                    properties:
+                      version: { type: string }
+                      source: { type: string, enum: [ml_service, fallback_heuristic] }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [scoring]
+      summary: Re-run the credit score (lender only)
+      description: >
+        Calls the Python service; when it is unreachable the deterministic JS
+        heuristic is used and the stored source says so. The score is advisory:
+        it never approves or rejects a loan by itself.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: New score
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  score: { $ref: '#/components/schemas/CreditScore' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/loans/{id}/proof:
+    get:
+      tags: [ledger]
+      summary: Ledger proofs for a loan's payments
+      description: >
+        Recomputes each payment hash from the row as it stands now and compares
+        it with the hash recorded at the time and with the on-chain record.
+        States are `verified`, `anchored_unchecked`, `unanchored` and `broken`;
+        an unanchored payment is never reported as verified.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Proof report
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  report: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/loans/{id}/anchor:
+    post:
+      tags: [ledger]
+      summary: Anchor any payments the ledger missed (lender only)
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Anchoring result (anchored / failures)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: object, additionalProperties: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/loans/{id}/flags:
+    get:
+      tags: [fraud]
+      summary: Fraud flags raised on a loan
+      description: Visible to the borrower (their own loan), the lender and auditors.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flags:
+                    type: array
+                    items: { $ref: '#/components/schemas/FraudFlag' }
+                  count: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/loans/{id}/holds/resolve:
+    post:
+      tags: [fraud]
+      summary: Release or reject a held movement (lender only)
+      description: >
+        Separate from clearing a flag on purpose: releasing moves money (the
+        repayment is applied with the same allocation code as an unheld one,
+        then anchored), rejecting leaves the row as evidence and returns a held
+        disbursement to `approved`.
+      security: [{ bearerAuth: [] }]
+      parameters: [{ $ref: '#/components/parameters/LoanId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, note]
+              properties:
+                decision: { type: string, enum: [release, reject] }
+                note: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200':
+          description: Hold resolved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/ledger/status:
+    get:
+      tags: [ledger]
+      summary: Chain mode and contract address
+      description: Reports honestly when no chain is configured instead of pretending to be anchored.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Chain status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  chain: { type: object, additionalProperties: true }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/ledger/audit-anchor:
+    post:
+      tags: [ledger]
+      summary: Anchor the current audit-chain root on-chain (lender only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Anchored root and transaction hash
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result: { type: object, additionalProperties: true }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/fraud/summary:
+    get:
+      tags: [fraud]
+      summary: Open flags, held money and alerts at a glance (lender, auditor)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Summary counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  summary: { $ref: '#/components/schemas/FraudSummary' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/fraud/flags:
+    get:
+      tags: [fraud]
+      summary: Review queue (lender, auditor)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [open, cleared, confirmed, all], default: open }
+        - in: query
+          name: severity
+          schema: { type: string, enum: [low, medium, high, critical] }
+        - in: query
+          name: loanId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Flags
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flags:
+                    type: array
+                    items: { $ref: '#/components/schemas/FraudFlag' }
+                  count: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/fraud/flags/{id}/resolve:
+    post:
+      tags: [fraud]
+      summary: Clear or confirm a flag (lender only)
+      description: A note is mandatory. Clearing a flag never moves money.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [resolution, note]
+              properties:
+                resolution: { type: string, enum: [cleared, confirmed] }
+                note: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200':
+          description: Resolved flag
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  flag: { $ref: '#/components/schemas/FraudFlag' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /v1/alerts:
+    get:
+      tags: [fraud]
+      summary: Own alert inbox
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: unread
+          schema: { type: string, enum: ['true', 'false'], default: 'false' }
+      responses:
+        '200':
+          description: Alerts and unread count
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alerts:
+                    type: array
+                    items: { $ref: '#/components/schemas/Alert' }
+                  unread: { type: integer }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/alerts/{id}/read:
+    post:
+      tags: [fraud]
+      summary: Mark one of your alerts as read
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Updated alert
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  alert: { $ref: '#/components/schemas/Alert' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/audit/logs:
+    get:
+      tags: [audit]
+      summary: Search the append-only audit log (auditor only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: q
+          description: Free text over action, entity id, actor role and the detail JSON
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: action
+          schema: { type: string }
+        - in: query
+          name: entityType
+          schema: { type: string, enum: [loan, transaction, document, fraud_flag, integrity_check, audit_log, session, user] }
+        - in: query
+          name: entityId
+          schema: { type: string }
+        - in: query
+          name: actorId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: from
+          schema: { type: string, example: '2026-11-01' }
+        - in: query
+          name: to
+          schema: { type: string, description: A date-only value includes the whole day }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: pageSize
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+      responses:
+        '200':
+          description: Newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/AuditRow' }
+                  total: { type: integer }
+                  page: { type: integer }
+                  pageSize: { type: integer }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/audit/actions:
+    get:
+      tags: [audit]
+      summary: Action names with counts, for the filter (auditor only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Distinct actions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  actions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action: { type: string }
+                        count: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/audit/timeline:
+    get:
+      tags: [audit]
+      summary: One loan's chronology from every source (auditor only)
+      description: Merges audit rows with transactions, documents and fraud flags, oldest first.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: loanId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: ref
+          description: Alternative to loanId; matched case-insensitively (e.g. SMF-2026-0001)
+          schema: { type: string }
+      responses:
+        '200':
+          description: Timeline
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  loan:
+                    type: object
+                    properties:
+                      id: { type: string, format: uuid }
+                      ref: { type: string }
+                  events:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        at: { type: string, format: date-time }
+                        kind: { type: string, enum: [audit, transaction, flag, document] }
+                        title: { type: string }
+                        detail: { type: string }
+                        seq: { type: integer }
+                        entityType: { type: string }
+                        entityId: { type: string }
+                        hash: { type: string, nullable: true }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/audit/export.csv:
+    get:
+      tags: [audit]
+      summary: Export the filtered log as CSV (auditor only)
+      description: >
+        The file carries its own verification state: chain head, head hash and
+        whether the chain verified at export time, plus the filters used. The
+        export itself is audited as `audit.exported`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: CSV file
+          headers:
+            X-Document-SHA256:
+              schema: { type: string }
+          content:
+            text/csv:
+              schema: { type: string }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/audit/export.pdf:
+    get:
+      tags: [audit]
+      summary: Export the filtered log as PDF (auditor only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: PDF file (truncated to 400 rows; use CSV for the full set)
+          headers:
+            X-Document-SHA256:
+              schema: { type: string }
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /v1/integrity/check:
+    post:
+      tags: [audit]
+      summary: Recompute hashes and compare with what was stored (auditor only)
+      description: >
+        `audit_chain` verifies the log only. `all` additionally re-derives every
+        loan's payment hashes and compares them with the ledger. `loan` scopes
+        that to one loan (by id or reference). A tampered result is a finding,
+        so it returns 200 with `result: tampered`, not 500.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scope]
+              properties:
+                scope: { type: string, enum: [all, audit_chain, loan] }
+                targetId: { type: string, format: uuid }
+                ref: { type: string, description: Loan reference, alternative to targetId }
+      responses:
+        '200':
+          description: Integrity run
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  check: { $ref: '#/components/schemas/IntegrityCheck' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /v1/integrity/checks:
+    get:
+      tags: [audit]
+      summary: Previous integrity runs (auditor only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: Run history, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checks:
+                    type: array
+                    items: { $ref: '#/components/schemas/IntegrityCheck' }
+                  count: { type: integer }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: 15-minute access token returned by /auth/login or /auth/refresh
+
+  parameters:
+    LoanId:
+      in: path
+      name: id
+      required: true
+      schema: { type: string, format: uuid }
+
+  schemas:
+    PublicUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        fullName: { type: string }
+        role: { type: string, enum: [borrower, lender, auditor] }
+        createdAt: { type: string, format: date-time }
+    Session:
+      type: object
+      properties:
+        user: { $ref: '#/components/schemas/PublicUser' }
+        accessToken:
+          type: string
+          description: Short-lived JWT kept in memory by the SPA
+    ProfileSummary:
+      type: object
+      properties:
+        nationalIdMasked: { type: string, nullable: true, example: '2345***89' }
+        phoneMasked: { type: string, nullable: true, example: '0712***678' }
+        occupation: { type: string, nullable: true }
+        monthlyIncomeCents: { type: integer, nullable: true }
+        businessName: { type: string, nullable: true }
+        defaultRateBps: { type: integer, nullable: true }
+        maxPrincipalCents: { type: integer, nullable: true }
+    Loan:
+      type: object
+      description: Loan summary. The detail endpoint adds parties, schedule and payments.
+      additionalProperties: true
+      properties:
+        id: { type: string, format: uuid }
+        ref: { type: string, example: SMF-2026-000123 }
+        lenderId: { type: string, format: uuid }
+        borrowerId: { type: string, format: uuid }
+        principalCents: { type: integer }
+        termCount: { type: integer }
+        frequency: { type: string, enum: [daily, weekly, monthly] }
+        rateBps: { type: integer }
+        purpose: { type: string }
+        totalRepayableCents: { type: integer }
+        status:
+          type: string
+          enum: [pending, under_review, approved, rejected, held, disbursed, active, settled, defaulted, cancelled]
+        agreementSha256: { type: string, nullable: true }
+        disbursedAt: { type: string, format: date-time, nullable: true }
+        settledAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CreditScore:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        score: { type: integer, minimum: 0, maximum: 100 }
+        riskLevel: { type: string, enum: [low, medium, high] }
+        modelVersion: { type: string }
+        modelSource: { type: string, enum: [ml_service, fallback_heuristic] }
+        advisoryOnly: { type: boolean, example: true }
+        features: { type: object, additionalProperties: true }
+        explanation:
+          type: array
+          items:
+            type: object
+            properties:
+              feature: { type: string }
+              impact: { type: number }
+              direction: { type: string, enum: [increases_risk, decreases_risk] }
+        latencyMs: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+    FraudFlag:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        loanId: { type: string, format: uuid, nullable: true }
+        loanRef: { type: string, nullable: true }
+        transactionId: { type: string, format: uuid, nullable: true }
+        borrowerId: { type: string, format: uuid, nullable: true }
+        borrowerName: { type: string, nullable: true }
+        flagType:
+          type: string
+          enum: [duplicate_txn_code, malformed_reference, identity_conflict, rapid_applications, ml_anomaly, duplicate_disbursement, hash_mismatch]
+        severity: { type: string, enum: [low, medium, high, critical] }
+        status: { type: string, enum: [open, cleared, confirmed] }
+        source: { type: string, enum: [rule, ml] }
+        ruleId: { type: string, nullable: true }
+        detail: { type: object, additionalProperties: true }
+        transactionStatus: { type: string, nullable: true, description: null when the flag is not about one movement }
+        transactionHoldReason: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        reviewedAt: { type: string, format: date-time, nullable: true }
+        reviewedBy: { type: string, nullable: true }
+        resolutionNote: { type: string, nullable: true }
+    FraudSummary:
+      type: object
+      properties:
+        openFlags: { type: integer }
+        bySeverity:
+          type: object
+          properties:
+            low: { type: integer }
+            medium: { type: integer }
+            high: { type: integer }
+            critical: { type: integer }
+        heldMovements: { type: integer, description: Money that has not moved and is waiting for a decision }
+        newLast24h: { type: integer }
+        mlFlags: { type: integer }
+    Alert:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        type: { type: string }
+        severity: { type: string, enum: [low, medium, high, critical] }
+        title: { type: string }
+        body: { type: string }
+        entityType: { type: string, nullable: true }
+        entityId: { type: string, nullable: true }
+        readAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    AuditRow:
+      type: object
+      description: One immutable, hash-chained audit entry.
+      properties:
+        seq: { type: integer }
+        createdAt: { type: string, format: date-time }
+        actorRole: { type: string, nullable: true }
+        actorName: { type: string, nullable: true }
+        action: { type: string, example: loan.disbursed }
+        entityType: { type: string }
+        entityId: { type: string, nullable: true }
+        ip: { type: string, nullable: true }
+        requestId: { type: string, nullable: true }
+        beforeHash: { type: string, nullable: true }
+        afterHash: { type: string, nullable: true }
+        prevHash: { type: string, description: Previous row's hash; tampering breaks this link }
+        rowHash: { type: string }
+        detail: { type: object, additionalProperties: true }
+    IntegrityCheck:
+      type: object
+      properties:
+        id: { type: string, format: uuid, nullable: true }
+        scope: { type: string, enum: [all, audit_chain, loan, entity] }
+        targetId: { type: string, nullable: true }
+        result: { type: string, enum: [ok, tampered, error] }
+        recordsChecked: { type: integer }
+        mismatches: { type: integer }
+        detail:
+          type: object
+          additionalProperties: true
+          description: Contains the chain verification and, for loan scopes, one line per loan
+        checkedAt: { type: string, format: date-time }
+        runBy: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code: { type: string, example: UNAUTHORIZED }
+            message: { type: string }
+            details: { nullable: true }
+            requestId: { type: string }
+
+  responses:
+    BadRequest:
+      description: Validation failed
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, invalid or expired credentials
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated, but this role may not perform the action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Not found, or not visible to this caller (existence is not confirmed)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: The resource is not in a state that allows this action
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }

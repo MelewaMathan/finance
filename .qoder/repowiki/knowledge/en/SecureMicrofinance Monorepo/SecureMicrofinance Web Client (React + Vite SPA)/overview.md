@@ -1,0 +1,1 @@
+React/Vite single-page client for the SecureMicrofinance platform, providing role-based dashboards for borrowers, lenders, and auditors with cookie-backed session auth.

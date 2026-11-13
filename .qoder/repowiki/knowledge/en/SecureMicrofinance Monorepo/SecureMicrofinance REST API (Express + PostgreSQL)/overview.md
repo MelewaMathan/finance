@@ -1,0 +1,1 @@
+Node/TypeScript Express backend exposing a secure microfinance REST API with JWT auth, role-based access, append-only ledger, and fraud rules backed by PostgreSQL.

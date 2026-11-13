@@ -1,0 +1,2 @@
+- Workspace-scoped scripts are invoked from the root via `npm --workspace <name> run ...` rather than direct package invocation.
+- Cross-service configuration is centralized in `.env.example` and consumed at runtime by both backend and frontend through `process.env`.
