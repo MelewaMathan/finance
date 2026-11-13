@@ -9,7 +9,17 @@ import { pool } from './pool';
  * and recorded in schema_migrations. No ORM and no magic: the SQL files are
  * the source of truth so the schema stays reviewable for the security report.
  */
-const migrationsDir = path.resolve(__dirname, 'migrations');
+/**
+ * Migrations are read from disk. `tsc` does not copy .sql files, so the Docker
+ * image copies them next to the compiled output (see backend/Dockerfile). Hosts
+ * that run `npm run build` and then `node dist/server.js` directly never make
+ * that copy, so fall back to the source directory instead of dying with ENOENT.
+ */
+const migrationsDir =
+  [
+    path.resolve(__dirname, 'migrations'),
+    path.resolve(__dirname, '..', '..', 'src', 'db', 'migrations'),
+  ].find((dir) => fs.existsSync(dir)) ?? path.resolve(__dirname, 'migrations');
 
 export async function runMigrations({ reset = false }: { reset?: boolean } = {}): Promise<void> {
   const client = await pool.connect();
