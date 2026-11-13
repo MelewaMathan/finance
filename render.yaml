@@ -42,7 +42,7 @@ services:
           property: connectionString
 
       # Must be the exact Vercel origin, or CORS rejects the proxied request:
-      # https://finance-171v.vercel.app
+      # https://finance-amber-three-78.vercel.app
       - key: WEB_ORIGIN
         sync: false
 
