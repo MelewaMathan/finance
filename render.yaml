@@ -1,0 +1,75 @@
+# Render Blueprint -- Express API for SecureMicrofinance.
+#
+# The Vite frontend is deployed separately on Vercel; Vercel proxies /api/* to
+# this service (see the rewrites in vercel.json), so the browser only ever talks
+# to the Vercel origin. That keeps the refresh cookie (SameSite=Strict, Secure)
+# working, which would break with a cross-site API call.
+#
+# To use: Render Dashboard -> New -> Blueprint -> pick this repository.
+# Anything marked `sync: false` is prompted for in the dashboard on first deploy.
+
+databases:
+  - name: smf-db
+    databaseName: secure_microfinance
+    user: smf
+    plan: free
+    region: virginia
+
+services:
+  - type: web
+    name: smf-api
+    runtime: docker
+    plan: free
+    region: virginia
+    # The npm workspace lockfile lives at the repository root, so the build
+    # context must be the root even though the Dockerfile is in backend/.
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+
+      # Render injects PORT and routes only to that port; env.ts prefers it.
+      # Do not set API_PORT here.
+
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smf-db
+          property: connectionString
+
+      # Must be the exact Vercel origin, or CORS rejects the proxied request:
+      # https://finance-171v.vercel.app
+      - key: WEB_ORIGIN
+        sync: false
+
+      # Any 16+ char string; generated once and kept by Render.
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+
+      # These two must be exactly 64 hex characters (32 bytes) or the API
+      # refuses to boot. Generate with:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      - key: FIELD_ENCRYPTION_KEY
+        sync: false
+      - key: BLIND_INDEX_KEY
+        sync: false
+
+      # 'off' degrades ledger features gracefully instead of trying to reach a
+      # local Hardhat node. Switch to 'amoy' once LEDGER_CONTRACT_ADDRESS is set.
+      - key: CHAIN_MODE
+        value: off
+      # No Python ML service on this platform; use the deterministic JS scorer.
+      - key: ML_FORCE_FALLBACK
+        value: "true"
+
+      # Ephemeral on the free plan: PDFs survive restarts but not redeploys.
+      - key: REPORT_STORAGE_DIR
+        value: /data/reports
+      - key: RUN_MIGRATIONS
+        value: "true"

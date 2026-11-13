@@ -27,7 +27,10 @@ const hexKey = z
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  API_PORT: z.coerce.number().int().positive().default(4000),
+  // Container platforms (Render, Railway, Fly) inject PORT and route only to
+  // that port, so it wins over the local default. API_PORT still overrides it
+  // when set explicitly.
+  API_PORT: z.coerce.number().int().positive().default(Number(process.env.PORT) || 4000),
   WEB_ORIGIN: z.string().default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
