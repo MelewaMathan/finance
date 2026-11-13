@@ -1,0 +1,77 @@
+name: CI
+
+# Runs the existing quality gates on every push and pull request:
+#   typecheck (backend + frontend) -> backend vitest -> contract tests -> build
+#
+# The backend suite deliberately runs against a real PostgreSQL instance, not
+# mocks: the append-only audit triggers, the hash chain and the blind indexes
+# are database-level guarantees that a mock cannot prove.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: secure_microfinance_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      # Tests reset the schema with runMigrations({ reset: true }), so dev and
+      # test point at the same throwaway database here.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/secure_microfinance_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/secure_microfinance_test
+      # Test-only values. config/env.ts validates their shape, so they must be
+      # present and well formed even though nothing real is encrypted here.
+      JWT_ACCESS_SECRET: ci_access_secret_not_used_in_production_0000
+      JWT_REFRESH_SECRET: ci_refresh_secret_not_used_in_production_00
+      FIELD_ENCRYPTION_KEY: '0000000000000000000000000000000000000000000000000000000000000001'
+      BLIND_INDEX_KEY: '0000000000000000000000000000000000000000000000000000000000000002'
+      CHAIN_MODE: off
+      ML_FORCE_FALLBACK: 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install (workspaces, lockfile-exact)
+        run: npm ci
+
+      - name: Typecheck backend and frontend
+        run: npm run typecheck
+
+      - name: Backend tests (real PostgreSQL)
+        run: npm --workspace backend run test
+
+      - name: Contract tests
+        run: npm --workspace contracts test
+
+      - name: Build frontend bundle
+        run: npm --workspace frontend run build

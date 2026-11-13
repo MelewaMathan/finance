@@ -7,6 +7,7 @@ import cookieParser from 'cookie-parser';
 import yaml from 'js-yaml';
 import swaggerUi from 'swagger-ui-express';
 import { config } from './config/env';
+import { forbidden } from './lib/errors';
 import { errorHandler, notFoundHandler } from './middleware/error';
 import { requestContext } from './middleware/requestContext';
 import { globalLimiter } from './middleware/rateLimit';
@@ -42,18 +43,32 @@ export function createApp(): express.Express {
     }),
   );
 
-  const allowedOrigins = [
-    config.WEB_ORIGIN,
+  // WEB_ORIGIN accepts a comma-separated list, and `*` is a wildcard, so a
+  // Vercel project's preview deployments (finance-<hash>-<team>.vercel.app)
+  // can be allowed without listing every generated hostname.
+  const allowedMatchers = [
+    ...config.WEB_ORIGIN.split(','),
     'http://127.0.0.1:5173',
     'http://localhost:5173',
-  ].filter(Boolean);
+  ]
+    .map((pattern) => pattern.trim())
+    .filter(Boolean)
+    .map((pattern) => {
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+      return new RegExp(`^${escaped}$`);
+    });
+
+  const originAllowed = (origin: string): boolean =>
+    allowedMatchers.some((matcher) => matcher.test(origin));
 
   app.use(
     cors({
       origin(origin, callback) {
         // No Origin header = same-origin / server-to-server / curl.
-        if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error('Origin not allowed by CORS'));
+        if (!origin || originAllowed(origin)) return callback(null, true);
+        // A rejected origin is a client mistake, not a server fault: 403 gives
+        // the caller a usable message instead of a blank 500.
+        return callback(forbidden(`Origin not allowed by CORS: ${origin}`));
       },
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
