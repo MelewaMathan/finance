@@ -9,7 +9,7 @@ important one: the whole design is an argument about the one boundary that must 
 ```mermaid
 flowchart LR
     B["Borrower<br/>(individual)"]
-    L["Lender<br/>(moneylender)"]
+    L["Staff<br/>(loan officer)"]
     A["Forensic auditor<br/>(read-only)"]
     S["SecureMicrofinance<br/>0"]
     ML["ML service<br/>(FastAPI, internal)"]
@@ -39,7 +39,7 @@ internal component — it sees numbers derived from the loan, never identity fie
 ```mermaid
 flowchart TB
     Z1["Borrower"] -->|credentials, application,<br/>repayment claim| P1
-    Z2["Lender"] -->|credentials, verify note,<br/>decision, disbursement, review note| P1
+    Z2["Staff"] -->|credentials, verify note,<br/>decision, disbursement, review note| P1
     Z3["Auditor"] -->|credentials, filters,<br/>integrity request| P1
 
     P1["1. Authenticate and authorise<br/>bcrypt · JWT · refresh rotation · RBAC"]
@@ -108,7 +108,7 @@ flowchart LR
     SC -- "low / medium" --> APPLY
     APPLY --> AN["anchor payload hash on-chain"]
     AN --> OK["status = cleared<br/>201 (or 202 when held)"]
-    H --> W["lender review:<br/>release → APPLY<br/>reject → status = rejected"]
+    H --> W["staff review:<br/>release → APPLY<br/>reject → status = rejected"]
     W --> AUD["audit row"]
     OK --> AUD
 ```
@@ -146,7 +146,7 @@ turn one into the other.
 
 The chain column is the design's central claim: **every row before it may be rich; the chain may only ever
 contain hashes and timestamps.** A public ledger that listed amounts would let anyone graph a borrower's
-credit history — which, for a shylock's customer, is a safety problem, not just a privacy one.
+credit history — which, for a customer of an informal lender, is a safety problem, not just a privacy one.
 
 ## Retention
 

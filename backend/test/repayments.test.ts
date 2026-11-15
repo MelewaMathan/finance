@@ -20,8 +20,9 @@ describe('repayments', () => {
 
     const lender = await register(`lender-${email}`, {
       fullName: 'Amani Mwangi',
-      role: 'lender',
-      businessName: 'Amani Micro Credit',
+      role: 'staff',
+      inviteCode: 'smf-staff-invite-change-me',
+      staffId: 'Amani Micro Credit',
     });
 
     const applied = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
@@ -116,7 +117,7 @@ describe('repayments', () => {
     expect(over.body.error.message).toMatch(/outstanding/i);
 
     // A pending application has no schedule to repay.
-    const lender = await register('lender-pending@repay.test', { role: 'lender', businessName: 'Second Credit' });
+    const lender = await register('lender-pending@repay.test', { role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Second Credit' });
     const applied = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
       lenderId: lender.userId,
       principalCents: 100_000,

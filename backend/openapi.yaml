@@ -3,8 +3,9 @@ info:
   title: SecureMicrofinance API
   version: 0.1.0
   description: >
-    REST API for a blockchain-backed microfinance prototype for private
-    moneylenders. Sensitive borrower data stays off-chain and encrypted;
+    REST API for a blockchain-backed microfinance prototype. Staff review loan
+    applications, approve or reject with reasons, and manage repayments.
+    Sensitive borrower data stays off-chain and encrypted;
     only transaction hashes and timestamps are written to the ledger.
   contact:
     name: SecureMicrofinance project team
@@ -44,9 +45,11 @@ paths:
   /v1/auth/register:
     post:
       tags: [auth]
-      summary: Create a borrower or lender account
+      summary: Create a borrower or staff account
       description: >
-        Auditors cannot self-register; they are provisioned by an administrator.
+        Borrowers self-register freely. Staff registration requires a valid invite code
+        (STAFF_INVITE_CODE in the server environment). Auditor accounts cannot be
+        self-registered; they are provisioned directly in the database.
         Returns a 15-minute access token and sets an httpOnly refresh cookie.
       security: []
       requestBody:
@@ -65,8 +68,9 @@ paths:
                   description: At least 10 characters, must contain a letter and a digit
                   example: Passw0rd!demo
                 fullName: { type: string, example: Grace Wanjiku }
-                role: { type: string, enum: [borrower, lender] }
-                businessName: { type: string, description: Lenders only }
+                role: { type: string, enum: [borrower, staff] }
+                inviteCode: { type: string, description: Required when role is staff }
+                staffId: { type: string, description: Optional staff identifier }
       responses:
         '201':
           description: Account created
@@ -254,7 +258,7 @@ paths:
                       properties:
                         id: { type: string, format: uuid }
                         fullName: { type: string }
-                        businessName: { type: string, nullable: true }
+                        institutionName: { type: string, nullable: true }
                         defaultRateBps: { type: integer, nullable: true }
                         maxPrincipalCents: { type: integer, nullable: true }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -1098,7 +1102,7 @@ components:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         fullName: { type: string }
-        role: { type: string, enum: [borrower, lender, auditor] }
+        role: { type: string, enum: [borrower, staff, auditor] }
         createdAt: { type: string, format: date-time }
     Session:
       type: object
@@ -1114,7 +1118,7 @@ components:
         phoneMasked: { type: string, nullable: true, example: '0712***678' }
         occupation: { type: string, nullable: true }
         monthlyIncomeCents: { type: integer, nullable: true }
-        businessName: { type: string, nullable: true }
+        staffId: { type: string, nullable: true }
         defaultRateBps: { type: integer, nullable: true }
         maxPrincipalCents: { type: integer, nullable: true }
     Loan:

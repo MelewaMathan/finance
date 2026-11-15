@@ -114,8 +114,8 @@ const FLAG_SELECT = `
 `;
 
 function assertQueueReader(actor: Actor): void {
-  if (actor.role !== 'lender' && actor.role !== 'auditor') {
-    throw forbidden('Only lenders and auditors may review fraud flags');
+  if (actor.role !== 'staff' && actor.role !== 'auditor') {
+    throw forbidden('Only the enterprise and auditors may review fraud flags');
   }
 }
 
@@ -146,7 +146,7 @@ export async function listFlags(actor: Actor, filters: FlagQuery): Promise<Fraud
       filters.status,
       filters.severity ?? null,
       filters.loanId ?? null,
-      actor.role === 'lender' ? actor.id : null,
+      actor.role === 'staff' ? actor.id : null,
       filters.limit,
     ],
   );
@@ -198,7 +198,7 @@ async function lenderOwnsFlag(actor: Actor, row: FlagRow & { lender_id: string |
 
 /** Reviewer decision on a single flag. Does not move money. */
 export async function resolveFlag(actor: Actor, flagId: string, input: ResolveFlagInput, req: Request): Promise<FraudFlag> {
-  if (actor.role !== 'lender') throw forbidden('Only the lender can resolve a flag');
+  if (actor.role !== 'staff') throw forbidden('Only the enterprise can resolve a flag');
 
   const row = await loadFlagForReview(flagId);
   // Unknown flag and someone else's flag look identical on purpose.
@@ -238,7 +238,7 @@ export async function resolveFlag(actor: Actor, flagId: string, input: ResolveFl
  * able to see that a claim was made and refused.
  */
 export async function resolveHold(actor: Actor, loanId: string, input: HoldDecisionInput, req: Request) {
-  if (actor.role !== 'lender') throw forbidden('Only the lender can release or reject a held movement');
+  if (actor.role !== 'staff') throw forbidden('Only the enterprise can release or reject a held movement');
   const loan = await loadVisibleLoan(actor, loanId);
 
   const held = await queryOne<HeldTxn>(
@@ -456,7 +456,7 @@ export interface FraudSummary {
 /** Header numbers for the review queue. */
 export async function getFraudSummary(actor: Actor): Promise<FraudSummary> {
   assertQueueReader(actor);
-  const lenderScope = actor.role === 'lender' ? actor.id : null;
+  const lenderScope = actor.role === 'staff' ? actor.id : null;
 
   const rows = await query<{ severity: Severity; count: number }>(
     `SELECT f.severity, count(*)::int AS count

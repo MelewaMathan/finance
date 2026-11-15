@@ -7,7 +7,7 @@ import { LogoMark } from './ui';
 /**
  * Application shell: responsive sidebar on desktop, slide-over menu on
  * mobile. Navigation is derived from the authenticated role, so a borrower
- * never sees lender or auditor destinations (the API enforces the same rule).
+ * never sees the enterprise owner or auditor destinations (the API enforces the same rule).
  */
 type IconName = 'home' | 'file' | 'cash' | 'shield' | 'clock' | 'check' | 'report' | 'user' | 'bell';
 
@@ -38,17 +38,17 @@ interface NavItem {
   end?: boolean;
 }
 
-const NAV_BY_ROLE: Record<'borrower' | 'lender' | 'auditor', NavItem[]> = {
+const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'auditor', NavItem[]> = {
   borrower: [
     { to: '/borrower', label: 'Dashboard', icon: 'home', end: true },
     { to: '/borrower/apply', label: 'Apply for a loan', icon: 'file' },
     { to: '/borrower/loans', label: 'My loans', icon: 'cash' },
     { to: '/profile', label: 'My profile', icon: 'user' },
   ],
-  lender: [
-    { to: '/lender', label: 'Dashboard', icon: 'home', end: true },
-    { to: '/lender/applications', label: 'Applications', icon: 'file' },
-    { to: '/lender/fraud', label: 'Fraud queue', icon: 'shield' },
+  staff: [
+    { to: '/enterprise', label: 'Dashboard', icon: 'home', end: true },
+    { to: '/enterprise/applications', label: 'Applications', icon: 'file' },
+    { to: '/enterprise/fraud', label: 'Fraud queue', icon: 'shield' },
     { to: '/profile', label: 'My profile', icon: 'user' },
   ],
   auditor: [

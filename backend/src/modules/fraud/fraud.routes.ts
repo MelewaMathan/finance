@@ -21,21 +21,20 @@ import {
 /**
  * Fraud review + alert routes (M6).
  *
- * Reading the queue is lender/auditor only; acting on it is the lender's,
- * because the lender is the account holder for the money. An auditor reviews
- * the reviewer -- which only works if the auditor cannot quietly clear their
- * own findings.
+ * Reading the queue is staff/auditor only; acting on it is the enterprise's
+ * responsibility because it is the account holder for the book. An auditor
+ * reviews the reviewer while remaining read-only.
  */
 export const fraudRouter = Router();
 
-fraudRouter.get('/fraud/summary', requireAuth, requireRole('lender', 'auditor'), async (req, res) => {
+fraudRouter.get('/fraud/summary', requireAuth, requireRole('staff', 'auditor'), async (req, res) => {
   res.json({ summary: await getFraudSummary(req.user!) });
 });
 
 fraudRouter.get(
   '/fraud/flags',
   requireAuth,
-  requireRole('lender', 'auditor'),
+  requireRole('staff', 'auditor'),
   validate(flagQuerySchema, 'query'),
   async (req, res) => {
     const flags = await listFlags(req.user!, req.query as unknown as Parameters<typeof listFlags>[1]);
@@ -46,7 +45,7 @@ fraudRouter.get(
 fraudRouter.post(
   '/fraud/flags/:id/resolve',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   validate(resolveFlagSchema, 'body'),
   async (req, res) => {
@@ -63,7 +62,7 @@ fraudRouter.get('/loans/:id/flags', requireAuth, validate(idParamSchema, 'params
 fraudRouter.post(
   '/loans/:id/holds/resolve',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   validate(holdDecisionSchema, 'body'),
   async (req, res) => {

@@ -55,7 +55,7 @@ loansRouter.get('/loans/:id', requireAuth, validate(idParamSchema, 'params'), as
 loansRouter.post(
   '/loans/:id/verify',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   validate(verifySchema),
   async (req, res) => {
@@ -67,7 +67,7 @@ loansRouter.post(
 loansRouter.post(
   '/loans/:id/decision',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   validate(decisionSchema),
   async (req, res) => {
@@ -79,7 +79,7 @@ loansRouter.post(
 loansRouter.post(
   '/loans/:id/disburse',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   validate(disburseSchema),
   async (req, res) => {

@@ -1,7 +1,7 @@
 """Trains the advisory credit-risk model on a synthetic, reproducible dataset.
 
 Why synthetic data: this is a university prototype. Real repayment histories
-from a private moneylender are not available (and should not be), so the
+from a staff-managed lending book are not available (and should not be), so the
 trainer generates a population whose *default process* is known. That makes
 the evaluation honest -- we can show the model recovers the signal we planted
 instead of reporting a number from data nobody can inspect.
@@ -136,7 +136,7 @@ def generate_dataset(rows: int, seed: int) -> tuple[np.ndarray, np.ndarray, np.n
         - 0.35 * np.clip(features["account_age_days"], 0, 730) / 730.0
     )
     # The intercept is set so the simulated population defaults at roughly
-    # 20%, which is the order of magnitude a small moneylender reports.
+    # 20%, which is a representative default rate for small loan books.
     z = -3.45 + SIGNAL_GAIN * signal
     probability = _sigmoid(z)
     labels = (rng.random(rows) < probability).astype(int)

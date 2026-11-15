@@ -10,7 +10,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { BorrowerDashboard } from './pages/borrower/BorrowerDashboard';
 import { ApplyLoanPage } from './pages/borrower/ApplyLoanPage';
 import { MyLoansPage } from './pages/borrower/MyLoansPage';
-import { LenderDashboard } from './pages/lender/LenderDashboard';
+import { LenderDashboard as EnterpriseDashboard } from './pages/lender/LenderDashboard';
 import { ApplicationsPage } from './pages/lender/ApplicationsPage';
 import { FraudQueuePage } from './pages/lender/FraudQueuePage';
 import { LoanDetailPage } from './pages/shared/LoanDetailPage';
@@ -28,7 +28,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 /** Prevents a signed-in user from opening another role's screens. */
-function RequireRole({ role, children }: { role: 'borrower' | 'lender' | 'auditor'; children: ReactNode }) {
+function RequireRole({ role, children }: { role: 'borrower' | 'staff' | 'auditor'; children: ReactNode }) {
   const { user, status } = useAuth();
   if (status === 'loading') return <FullPageLoader />;
   if (!user) return <Navigate to="/login" replace />;
@@ -93,33 +93,33 @@ export default function App() {
         />
 
         <Route
-          path="/lender"
+          path="/enterprise"
           element={
-            <RequireRole role="lender">
-              <LenderDashboard />
+            <RequireRole role="staff">
+              <EnterpriseDashboard />
             </RequireRole>
           }
         />
         <Route
-          path="/lender/applications"
+          path="/enterprise/applications"
           element={
-            <RequireRole role="lender">
+            <RequireRole role="staff">
               <ApplicationsPage />
             </RequireRole>
           }
         />
         <Route
-          path="/lender/loans/:id"
+          path="/enterprise/loans/:id"
           element={
-            <RequireRole role="lender">
+            <RequireRole role="staff">
               <LoanDetailPage />
             </RequireRole>
           }
         />
         <Route
-          path="/lender/fraud"
+          path="/enterprise/fraud"
           element={
-            <RequireRole role="lender">
+            <RequireRole role="staff">
               <FraudQueuePage />
             </RequireRole>
           }

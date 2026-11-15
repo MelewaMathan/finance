@@ -2,7 +2,7 @@
   "name": "secure-microfinance",
   "version": "0.1.0",
   "private": true,
-  "description": "Blockchain-backed microfinance prototype for private moneylenders (security-focused university project)",
+  "description": "Blockchain-backed microfinance prototype — security-focused university project",
   "workspaces": [
     "backend",
     "frontend",

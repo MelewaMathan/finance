@@ -26,8 +26,12 @@ export interface RegisterInput {
   email: string;
   password: string;
   fullName: string;
-  role: Extract<Role, 'borrower' | 'lender'>;
-  businessName?: string;
+  /** Public registration creates borrowers; staff registration requires a valid invite code. */
+  role: 'borrower' | 'staff';
+  /** Required when role === 'staff'. Must match STAFF_INVITE_CODE. */
+  inviteCode?: string;
+  /** Optional staff identifier shown on profiles. */
+  staffId?: string;
 }
 
 export interface AuthResult {
@@ -63,6 +67,15 @@ export async function register(input: RegisterInput, context: RefreshContext & {
   const existing = await queryOne<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
   if (existing) throw conflict('An account with that email already exists');
 
+  // Staff self-registration requires a valid invite code (enforced on the
+  // backend regardless of what the UI sends). Auditor accounts cannot be
+  // created through this endpoint at all.
+  if (input.role === 'staff') {
+    if (!input.inviteCode || input.inviteCode !== config.STAFF_INVITE_CODE) {
+      throw unauthorized('Invalid or missing staff invite code');
+    }
+  }
+
   const passwordHash = await bcrypt.hash(input.password, config.BCRYPT_COST);
 
   const user = await withTransaction(async (client) => {
@@ -74,13 +87,15 @@ export async function register(input: RegisterInput, context: RefreshContext & {
     );
     const created = inserted.rows[0];
 
-    if (input.role === 'lender') {
-      await client.query('INSERT INTO lender_profiles (user_id, business_name) VALUES ($1, $2)', [
-        created.id,
-        input.businessName ?? null,
-      ]);
-    } else {
+    if (input.role === 'borrower') {
       await client.query('INSERT INTO borrower_profiles (user_id) VALUES ($1)', [created.id]);
+    }
+
+    if (input.role === 'staff') {
+      await client.query('INSERT INTO lender_profiles (user_id, staff_id) VALUES ($1, $2)', [
+        created.id,
+        input.staffId ?? null,
+      ]);
     }
 
     // Audit inside the same transaction so "user created" and "audit row"

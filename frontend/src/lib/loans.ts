@@ -20,7 +20,7 @@ export interface Party {
   id: string;
   fullName: string;
   email?: string;
-  businessName?: string | null;
+  institutionName?: string | null;
 }
 
 export type RiskLevel = 'low' | 'medium' | 'high';
@@ -134,7 +134,7 @@ export interface LoanDetail extends Omit<LoanSummary, 'score'> {
 export interface LenderOption {
   id: string;
   fullName: string;
-  businessName: string | null;
+  institutionName: string | null;
   defaultRateBps: number;
   maxPrincipalCents: number;
 }

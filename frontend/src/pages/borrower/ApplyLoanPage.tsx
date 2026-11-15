@@ -8,8 +8,8 @@ import { applyLoan, listLenders, type Frequency, type LenderOption } from '../..
 /**
  * Loan application form.
  *
- * The borrower chooses the moneylender, the amount, the term and the
- * structure. The rate shown here is the lender's default and is only an
+ * The borrower chooses the operating enterprise, the amount, the term and the
+ * structure. The rate shown here is the enterprise's default and is only an
  * estimate: the server recalculates it at approval.
  */
 export function ApplyLoanPage() {
@@ -39,7 +39,7 @@ export function ApplyLoanPage() {
         setLenderId((current) => current || items[0]?.id || '');
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Could not load moneylenders');
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Could not load enterprise partners');
       });
     return () => {
       cancelled = true;
@@ -62,7 +62,7 @@ export function ApplyLoanPage() {
 
     const principalCents = Math.round(Number(principal) * 100);
     if (!lenderId) {
-      setError('Choose a moneylender');
+      setError('Choose an enterprise');
       return;
     }
     if (!Number.isFinite(principalCents) || principalCents < 10_000) {
@@ -94,26 +94,26 @@ export function ApplyLoanPage() {
     <div>
       <PageHeader
         title="Apply for a loan"
-        subtitle="Your application goes straight to the moneylender you choose. Identity data stays encrypted."
+        subtitle="Your application goes to the staff member you choose. Identity data stays encrypted."
       />
 
       {loadError ? (
         <Alert>{loadError}</Alert>
       ) : !lenders ? (
-        <Spinner label="Loading moneylenders" />
+        <Spinner label="Loading enterprise partners" />
       ) : lenders.length === 0 ? (
-        <Alert tone="warning">No moneylender is accepting applications yet. Ask your lender to register first.</Alert>
+        <Alert tone="warning">No enterprise is accepting applications yet. Ask the operating enterprise to register first.</Alert>
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
           <form className="lg:col-span-2" onSubmit={onSubmit} noValidate>
             <Card title="Loan request">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="sm:col-span-2">
-                  <Field label="Moneylender" htmlFor="lender">
+                  <Field label="Operating enterprise" htmlFor="lender">
                     <Select id="lender" value={lenderId} onChange={(event) => setLenderId(event.target.value)} required>
                       {lenders.map((option) => (
                         <option key={option.id} value={option.id}>
-                          {option.businessName ?? option.fullName} — up to {formatMoney(option.maxPrincipalCents)} at{' '}
+                          {option.institutionName ?? option.fullName} — up to {formatMoney(option.maxPrincipalCents)} at{' '}
                           {percentFromBps(option.defaultRateBps)} per period
                         </option>
                       ))}
@@ -165,7 +165,7 @@ export function ApplyLoanPage() {
                 </Field>
 
                 <div className="sm:col-span-2">
-                  <Field label="Purpose" htmlFor="purpose" hint="At least 5 characters, visible to your lender">
+                  <Field label="Purpose" htmlFor="purpose" hint="At least 5 characters, visible to the enterprise">
                     <TextInput
                       id="purpose"
                       value={purpose}
@@ -211,7 +211,7 @@ export function ApplyLoanPage() {
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-slate-500">
                   Guarantor details are encrypted at rest. Your national ID and phone are already on file and shown
-                  masked to the lender.
+                  masked to the operating enterprise.
                 </p>
                 <button type="submit" className="btn-brand" disabled={submitting}>
                   {submitting ? 'Submitting…' : 'Submit application'}
@@ -247,14 +247,14 @@ export function ApplyLoanPage() {
                 <p className="text-sm text-slate-500">Enter an amount and term to see the estimate.</p>
               )}
               <p className="mt-4 text-xs text-slate-400">
-                Flat interest per period, as quoted by the lender. Your lender confirms the final rate when approving.
+                Flat interest per period, as quoted by the enterprise. The enterprise confirms the final rate when approving.
               </p>
             </Card>
 
             <Card title="What happens next">
               <ol className="space-y-3 text-sm text-slate-600">
-                <li>1. Your lender verifies your identity against the ID on file.</li>
-                <li>2. They approve with a final rate, and an agreement PDF is sealed with a SHA-256 fingerprint.</li>
+                <li>1. The enterprise verifies your identity against the ID on file.</li>
+                <li>2. It approves with a final rate, and an agreement PDF is sealed with a SHA-256 fingerprint.</li>
                 <li>3. Disbursement and every repayment are hashed and anchored on the ledger.</li>
               </ol>
             </Card>

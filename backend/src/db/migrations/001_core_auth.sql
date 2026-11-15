@@ -2,8 +2,8 @@
 -- 001_core_auth.sql -- identity, roles, encrypted borrower profiles, sessions
 -- ============================================================================
 
-CREATE TYPE user_role AS ENUM ('borrower', 'lender', 'auditor');
-CREATE TYPE user_status AS ENUM ('active', 'suspended', 'closed');
+CREATE TYPE user_role AS ENUM ('borrower', 'staff', 'auditor');
+CREATE TYPE user_status AS ENUM ('active', 'pending', 'suspended', 'closed');
 
 -- Reusable updated_at trigger.
 CREATE OR REPLACE FUNCTION set_updated_at() RETURNS trigger
@@ -63,7 +63,7 @@ CREATE TRIGGER borrower_profiles_touch_updated_at
 
 CREATE TABLE lender_profiles (
   user_id                    uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-  business_name              text,
+  staff_id                   text,
   max_principal_cents        bigint NOT NULL DEFAULT 20000000 CHECK (max_principal_cents > 0),
   default_rate_bps           integer NOT NULL DEFAULT 1000 CHECK (default_rate_bps BETWEEN 0 AND 10000),
   default_penalty_bps_per_day integer NOT NULL DEFAULT 100 CHECK (default_penalty_bps_per_day >= 0),

@@ -21,7 +21,7 @@ export interface ProfileSummary {
   phoneMasked: string | null;
   occupation: string | null;
   monthlyIncomeCents: number | null;
-  businessName?: string | null;
+  staffId?: string | null;
   defaultRateBps?: number;
   maxPrincipalCents?: number;
 }
@@ -35,8 +35,9 @@ interface AuthContextValue {
     email: string;
     password: string;
     fullName: string;
-    role: 'borrower' | 'lender';
-    businessName?: string;
+    role: 'borrower' | 'staff';
+    inviteCode?: string;
+    staffId?: string;
   }) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -107,8 +108,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email: string;
       password: string;
       fullName: string;
-      role: 'borrower' | 'lender';
-      businessName?: string;
+      role: 'borrower' | 'staff';
+      inviteCode?: string;
+      staffId?: string;
     }) => {
       const session = await api<SessionPayload>('/auth/register', { method: 'POST', body: input });
       await applySession(session);
@@ -144,8 +146,8 @@ export function useAuth(): AuthContextValue {
 /** Landing route per role. */
 export function homeFor(role: SessionUser['role']): string {
   switch (role) {
-    case 'lender':
-      return '/lender';
+    case 'staff':
+      return '/enterprise';
     case 'auditor':
       return '/auditor';
     default:
@@ -155,6 +157,6 @@ export function homeFor(role: SessionUser['role']): string {
 
 export const ROLE_LABEL: Record<SessionUser['role'], string> = {
   borrower: 'Borrower',
-  lender: 'Moneylender',
+  staff: 'Staff',
   auditor: 'Forensic auditor',
 };

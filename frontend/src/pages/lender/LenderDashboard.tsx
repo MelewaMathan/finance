@@ -5,7 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { formatMoney, percentFromBps } from '../../lib/format';
 import { listLoans } from '../../lib/loans';
 
-/** Lender dashboard: own-book metrics and the controls they operate. */
+/** Enterprise dashboard: own-book metrics and the controls they operate. */
 export function LenderDashboard() {
   const { user, profile } = useAuth();
   const [counts, setCounts] = useState<{ pending: number; held: number; active: number; outstanding: number } | null>(null);
@@ -36,10 +36,10 @@ export function LenderDashboard() {
   return (
     <div>
       <PageHeader
-        title={profile?.businessName || `Karibu, ${user.fullName.split(' ')[0]}`}
+        title={`Karibu, ${user.fullName.split(' ')[0]}`}
         subtitle="Review applications, verify identity, and keep every transaction provable."
         actions={
-          <Link to="/lender/applications" className="btn-primary">
+          <Link to="/enterprise/applications" className="btn-primary">
             Review applications
           </Link>
         }
@@ -80,7 +80,7 @@ export function LenderDashboard() {
                 <p className="text-sm font-medium text-slate-900">Fraud review</p>
                 <p className="text-xs text-slate-500">High and critical flags block clearing automatically.</p>
               </div>
-              <Link to="/lender/fraud" className="text-sm font-semibold text-brand-700 hover:underline">
+              <Link to="/enterprise/fraud" className="text-sm font-semibold text-brand-700 hover:underline">
                 Open queue →
               </Link>
             </div>

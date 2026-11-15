@@ -11,7 +11,7 @@ export interface ProfileSummary {
   phoneMasked: string | null;
   occupation: string | null;
   monthlyIncomeCents: number | null;
-  businessName?: string | null;
+  staffId?: string | null;
   defaultRateBps?: number;
   maxPrincipalCents?: number;
 }
@@ -20,9 +20,9 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
   const user = await queryOne<{ role: string }>('SELECT role FROM users WHERE id = $1', [userId]);
   if (!user) throw notFound('User not found');
 
-  if (user.role === 'lender') {
-    const row = await queryOne<{ business_name: string | null; default_rate_bps: number; max_principal_cents: number }>(
-      'SELECT business_name, default_rate_bps, max_principal_cents FROM lender_profiles WHERE user_id = $1',
+  if (user.role === 'staff') {
+    const row = await queryOne<{ staff_id: string | null; default_rate_bps: number; max_principal_cents: number }>(
+      'SELECT staff_id, default_rate_bps, max_principal_cents FROM lender_profiles WHERE user_id = $1',
       [userId],
     );
     return {
@@ -30,7 +30,7 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
       phoneMasked: null,
       occupation: null,
       monthlyIncomeCents: null,
-      businessName: row?.business_name ?? null,
+      staffId: row?.staff_id ?? null,
       defaultRateBps: row?.default_rate_bps,
       maxPrincipalCents: row?.max_principal_cents,
     };

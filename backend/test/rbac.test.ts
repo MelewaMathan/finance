@@ -48,7 +48,7 @@ describe('RBAC', () => {
   });
 
   it('stops a lender from writing a borrower profile', async () => {
-    const lender = await register('lender@test.local', { role: 'lender', businessName: 'Test Credit' });
+    const lender = await register('lender@test.local', { role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Test Credit' });
     const response = await request(app)
       .put('/api/v1/me/profile')
       .set('Authorization', `Bearer ${lender.token}`)

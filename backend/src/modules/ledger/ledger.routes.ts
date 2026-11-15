@@ -10,8 +10,8 @@ import { anchorAuditTrail, anchorLoanTransactions, getLoanLedgerReport } from '.
  * Ledger routes.
  *
  * Reads are open to every authenticated role -- a borrower is entitled to
- * proof of their own payments. Writes (anchoring) are operator actions and are
- * restricted to the lender whose book is affected.
+ * proof of their own payments. Writes (anchoring) are enterprise actions and
+ * are restricted to the staff account operating the book.
  */
 export const ledgerRouter = Router();
 
@@ -32,7 +32,7 @@ ledgerRouter.get('/loans/:id/proof', requireAuth, validate(idParamSchema, 'param
 ledgerRouter.post(
   '/loans/:id/anchor',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   async (req, res) => {
     const result = await anchorLoanTransactions(req.user!, req.params.id as string);
@@ -43,7 +43,7 @@ ledgerRouter.post(
   },
 );
 
-ledgerRouter.post('/ledger/audit-anchor', requireAuth, requireRole('lender'), async (req, res) => {
+ledgerRouter.post('/ledger/audit-anchor', requireAuth, requireRole('staff'), async (req, res) => {
   const result = await anchorAuditTrail(req.user!);
   await auditRequest(req, 'ledger.audit_root_anchored', 'audit_log', null, {
     seq: result.seq,

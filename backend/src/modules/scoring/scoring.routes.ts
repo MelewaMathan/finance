@@ -9,9 +9,9 @@ import { generateScore, getLatestScore } from './scoring.service';
 /**
  * Credit-score routes.
  *
- * Reading is open to anyone who may see the loan (borrower, lender, auditor):
+ * Reading is open to anyone who may see the loan (borrower, staff, auditor):
  * a borrower is entitled to know what the model said about them. Re-running
- * the score is the lender's call, and every run is audited with its source.
+ * the score is the enterprise's call, and every run is audited with its source.
  */
 export const scoringRouter = Router();
 
@@ -24,7 +24,7 @@ scoringRouter.get('/loans/:id/score', requireAuth, validate(idParamSchema, 'para
 scoringRouter.post(
   '/loans/:id/score',
   requireAuth,
-  requireRole('lender'),
+  requireRole('staff'),
   validate(idParamSchema, 'params'),
   async (req, res) => {
     const loan = await loadVisibleLoan(req.user!, req.params.id as string);

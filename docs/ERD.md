@@ -56,7 +56,7 @@ erDiagram
 
     LENDER_PROFILES {
         uuid user_id PK, FK
-        text business_name
+        text staff_id
         bigint max_principal_cents
         integer default_rate_bps
         integer default_penalty_bps_per_day

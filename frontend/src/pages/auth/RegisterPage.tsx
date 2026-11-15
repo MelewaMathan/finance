@@ -5,14 +5,15 @@ import { Alert, Field, TextInput } from '../../components/ui';
 import { homeFor, useAuth } from '../../lib/auth';
 import { fieldErrors, messageOf } from '../../lib/errors';
 
-type Role = 'borrower' | 'lender';
+type Role = 'borrower' | 'staff';
 
 export function RegisterPage() {
   const { register, status, user } = useAuth();
   const navigate = useNavigate();
   const [role, setRole] = useState<Role>('borrower');
   const [fullName, setFullName] = useState('');
-  const [businessName, setBusinessName] = useState('');
+  const [staffId, setStaffId] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -39,9 +40,10 @@ export function RegisterPage() {
         password,
         fullName,
         role,
-        businessName: role === 'lender' ? businessName || undefined : undefined,
+        inviteCode: role === 'staff' ? inviteCode || undefined : undefined,
+        staffId: role === 'staff' ? staffId || undefined : undefined,
       });
-      navigate(role === 'lender' ? '/lender' : '/borrower', { replace: true });
+      navigate(role === 'staff' ? '/enterprise' : '/borrower', { replace: true });
     } catch (caught) {
       setError(messageOf(caught));
       setErrors(fieldErrors(caught));
@@ -56,7 +58,7 @@ export function RegisterPage() {
         <div className="card p-6 sm:p-8">
           <h1 className="text-xl font-semibold text-slate-900">Create an account</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Borrowers apply for loans. Moneylenders manage their own book and set rates.
+            Borrowers apply for loans. Staff review applications and manage repayments.
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
@@ -65,7 +67,7 @@ export function RegisterPage() {
             <fieldset>
               <legend className="label">I am a</legend>
               <div className="grid grid-cols-2 gap-3">
-                {(['borrower', 'lender'] as const).map((option) => (
+                {(['borrower', 'staff'] as const).map((option) => (
                   <button
                     key={option}
                     type="button"
@@ -77,9 +79,11 @@ export function RegisterPage() {
                         : 'border-slate-300 bg-white text-slate-700 hover:border-slate-400'
                     }`}
                   >
-                    {option === 'borrower' ? 'Borrower' : 'Moneylender'}
+                    {option === 'borrower' ? 'Borrower' : 'Staff'}
                     <span className="mt-0.5 block text-xs font-normal text-slate-500">
-                      {option === 'borrower' ? 'Apply and repay loans' : 'Run your own lending book'}
+                      {option === 'borrower'
+                        ? 'Apply and repay loans'
+                        : 'Review applications and manage loans'}
                     </span>
                   </button>
                 ))}
@@ -96,15 +100,27 @@ export function RegisterPage() {
               />
             </Field>
 
-            {role === 'lender' ? (
-              <Field label="Business name" htmlFor="businessName" error={errors.businessName} hint="Shown on the loan agreement.">
-                <TextInput
-                  id="businessName"
-                  value={businessName}
-                  onChange={(event) => setBusinessName(event.target.value)}
-                  placeholder="Wanjiku Credit"
-                />
-              </Field>
+            {role === 'staff' ? (
+              <>
+                <Field label="Staff ID" htmlFor="staffId" error={errors.staffId} hint="Optional — leave blank if not assigned yet.">
+                  <TextInput
+                    id="staffId"
+                    value={staffId}
+                    onChange={(event) => setStaffId(event.target.value)}
+                    placeholder="SMF-STAFF-001"
+                  />
+                </Field>
+
+                <Field label="Invite code" htmlFor="inviteCode" error={errors.inviteCode}>
+                  <TextInput
+                    id="inviteCode"
+                    required
+                    value={inviteCode}
+                    onChange={(event) => setInviteCode(event.target.value)}
+                    placeholder="Provided by your administrator"
+                  />
+                </Field>
+              </>
             ) : null}
 
             <Field label="Email address" htmlFor="email" error={errors.email}>

@@ -26,7 +26,7 @@ describe('forensic dashboard', () => {
   }
 
   async function lender(email = 'lender@forensics.test'): Promise<Session> {
-    return register(email, { fullName: 'Amani Mwangi', role: 'lender', businessName: 'Amani Micro Credit' });
+    return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
   /** A loan with a disbursement and one repayment: enough events to order. */

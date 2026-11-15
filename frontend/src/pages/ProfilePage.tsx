@@ -73,7 +73,7 @@ export function ProfilePage() {
 
   return (
     <div>
-      <PageHeader title="My profile" subtitle="Keep your details current — lenders rely on them for verification." />
+      <PageHeader title="My profile" subtitle="Keep your details current — the operating enterprise relies on them for verification." />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <Card title="Account" className="lg:col-span-2">
@@ -106,7 +106,7 @@ export function ProfilePage() {
           </div>
         </Card>
 
-        <Card title={user.role === 'borrower' ? 'Identity details' : 'Lending profile'} className="lg:col-span-3">
+        <Card title={user.role === 'borrower' ? 'Identity details' : 'Enterprise profile'} className="lg:col-span-3">
           {user.role === 'borrower' ? (
             <form className="space-y-4" onSubmit={onSubmit} noValidate>
               {error ? <Alert>{error}</Alert> : null}
@@ -189,11 +189,11 @@ export function ProfilePage() {
             </form>
           ) : (
             <dl className="space-y-3 text-sm">
-              {user.role === 'lender' ? (
+              {user.role === 'staff' ? (
                 <>
                   <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Business name</dt>
-                    <dd className="mt-0.5 text-slate-900">{profile?.businessName ?? 'Not set'}</dd>
+                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Staff ID</dt>
+                    <dd className="mt-0.5 text-slate-900">{profile?.staffId ?? 'Not set'}</dd>
                   </div>
                   <div>
                     <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Default rate per period</dt>

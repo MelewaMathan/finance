@@ -27,7 +27,7 @@ export function refreshCookie(response: Response): string {
 
 export async function register(
   email: string,
-  overrides: Partial<{ fullName: string; role: 'borrower' | 'lender'; businessName: string; password: string }> = {},
+  overrides: Partial<{ fullName: string; role: 'borrower' | 'staff'; staffId: string; inviteCode: string; password: string }> = {},
 ): Promise<Session> {
   const response = await request(app)
     .post('/api/v1/auth/register')
@@ -36,7 +36,8 @@ export async function register(
       password: overrides.password ?? PASSWORD,
       fullName: overrides.fullName ?? 'Test User',
       role: overrides.role ?? 'borrower',
-      businessName: overrides.businessName,
+      inviteCode: overrides.inviteCode,
+      staffId: overrides.staffId,
     });
   if (response.status !== 201) {
     throw new Error(`register failed: ${response.status} ${JSON.stringify(response.body)}`);

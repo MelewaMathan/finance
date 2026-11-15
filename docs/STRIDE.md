@@ -23,7 +23,7 @@ Terminology used below:
 | --- | --- | --- |
 | Password | `users.password_hash` (bcrypt, cost 12) | Offline cracking; every other account is one pivot away |
 | Refresh token | `refresh_tokens.token_hash` (SHA-256), cookie | Session takeover for up to 7 days |
-| Borrower identity (national ID, phone, DOB, address, guarantor) | AES-256-GCM ciphertext in `borrower_profiles`, HMAC blind indexes | Coercion, doxxing, and — for a shylock's customer — physical risk |
+| Borrower identity (national ID, phone, DOB, address, guarantor) | AES-256-GCM ciphertext in `borrower_profiles`, HMAC blind indexes | Coercion, doxxing, and — for a borrower in an informal lending context — physical risk |
 | Money movements | `transactions` (integer cents, payload hash, on-chain proof) | Disputing or inventing debts |
 | Signed loan agreement | PDF in `storage/`, SHA-256 in `documents` | Substituting different terms after signing |
 | Evidence chain | `audit_log` + on-chain anchors | Rewriting history: repudiating an approval, erasing a hold |
@@ -66,16 +66,16 @@ mature deployment would add.
 | A10 | R | Denying that a login happened | Every success, failure, lockout and rotation is written to the audit chain with IP and user agent | IP is spoofable behind a proxy that does not strip `X-Forwarded-For` (`trust proxy` is 1 hop) |
 | A11 | I | Password recovered from logs | Passwords are never logged; audit details carry the email and a reason, never the secret | — |
 | A12 | D | Login endpoint flooded | `authLimiter`; global limiter 600 requests / 15 min | Limits are in-process; a second API replica doubles every bucket |
-| A13 | E | User claims a role they were not granted | `register` only accepts `borrower` or `lender`; there is no self-service path to `auditor` (seeded / admin-created only); the role in the token is ignored in favour of the database | Any DBA can create an auditor — that is the same trust as the database itself |
+| A13 | E | User claims a role they were not granted | `register` accepts `borrower` freely and `staff` only with a valid invite code; there is no self-service path to `auditor` (database-provisioned only); the role in the token is ignored in favour of the database | Any DBA can create an auditor — that is the same trust as the database itself |
 
 ### E2 · Authorisation on every request
 
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
 | B1 | E | Borrower reads another borrower's loan | `loadVisibleLoan` scopes by `borrower_id`/`lender_id`; auditors see all; anything else is `404`, not `403` | — |
-| B2 | E | Lender approves or disburses on another lender's book | `requireRole('lender')` at the route **and** ownership re-check in the service; tested in `loans.test.ts` ("scopes the queue to each book") | — |
+| B2 | E | Staff approves or disburses on another staff member's book | `requireRole('staff')` at the route **and** ownership re-check in the service; tested in `loans.test.ts` ("scopes the queue to each book") | — |
 | B3 | E | Auditor modifies money | No write route accepts `auditor`; `denyAuditorWrites` is a redundant belt on the one route a shared middleware could have let through | An auditor can mark **their own** alert as read (`alerts.user_id = actor.id`) — no money, no evidence is touched |
-| B4 | E | Borrower marks their own loan as verified / approved | Decision endpoints are lender-only; identity verification is lender-only; the service also re-checks loan status transitions | — |
+| B4 | E | Borrower marks their own loan as verified / approved | Decision endpoints are staff-only; identity verification is staff-only; the service also re-checks loan status transitions | — |
 | B5 | I | Existence oracle via error codes | Hidden resources answer `404`; `403` is reserved for "you exist but may not do this" | Endpoint shape (e.g. `409` on a second decision) can still reveal that a resource exists to someone who can already see it |
 | B6 | E | Role check bypassed by a new route | Roles are declared per route, so a forgotten gate is a code-review failure rather than a config gap. `rbac.test.ts` asserts 401/403/404 behaviour per role | No automated "every mutating route has a role" test |
 

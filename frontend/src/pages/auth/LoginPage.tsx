@@ -6,7 +6,7 @@ import { homeFor, useAuth } from '../../lib/auth';
 import { fieldErrors, messageOf } from '../../lib/errors';
 
 const DEMO_ACCOUNTS = [
-  { role: 'Moneylender', email: 'lender@smf.demo' },
+  { role: 'Staff', email: 'staff@smf.demo' },
   { role: 'Borrower', email: 'borrower@smf.demo' },
   { role: 'Auditor', email: 'auditor@smf.demo' },
 ];
@@ -29,7 +29,7 @@ export function LoginPage() {
     setErrors({});
     try {
       await login(email, password);
-      const role = email.includes('lender') ? '/lender' : email.includes('auditor') ? '/auditor' : '/borrower';
+      const role = email.includes('staff') ? '/enterprise' : email.includes('auditor') ? '/auditor' : '/borrower';
       navigate(role, { replace: true });
     } catch (caught) {
       setError(messageOf(caught));
@@ -50,7 +50,7 @@ export function LoginPage() {
         <div className="card p-6 sm:p-8">
           <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Access your lending book, repayments and audit trail.
+            Access the SecureMicrofinance ledger, repayments and audit trail.
           </p>
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
@@ -86,7 +86,7 @@ export function LoginPage() {
           </form>
 
           <p className="mt-4 text-center text-sm text-slate-500">
-            New borrower or lender?{' '}
+            New borrower or enterprise operator?{' '}
             <Link to="/register" className="font-semibold text-brand-700 hover:underline">
               Create an account
             </Link>

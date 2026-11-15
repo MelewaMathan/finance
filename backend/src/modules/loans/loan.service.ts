@@ -78,7 +78,7 @@ interface LoanRecord {
   borrower_name: string;
   borrower_email: string;
   lender_name: string;
-  lender_business: string | null;
+  lender_institution: string | null;
   /** Present only when the query joined the latest credit score. */
   score_value?: number | null;
   score_risk_level?: 'low' | 'medium' | 'high' | null;
@@ -119,7 +119,7 @@ const LOAN_SELECT = `
          b.full_name AS borrower_name,
          b.email     AS borrower_email,
          w.full_name AS lender_name,
-         lp.business_name AS lender_business
+         lp.staff_id AS lender_institution
     FROM loans l
     JOIN users b ON b.id = l.borrower_id
     JOIN users w ON w.id = l.lender_id
@@ -250,7 +250,7 @@ function toSummary(row: LoanRecord, outstandingCents: number | null = null) {
     purpose: row.purpose,
     outstandingCents,
     borrower: { id: row.borrower_id, fullName: row.borrower_name, email: row.borrower_email },
-    lender: { id: row.lender_id, fullName: row.lender_name, businessName: row.lender_business },
+    lender: { id: row.lender_id, fullName: row.lender_name, institutionName: row.lender_institution },
     identityVerified: Boolean(row.identity_verified_at),
     agreementSha256: row.agreement_sha256,
     heldReason: row.held_reason,
@@ -270,11 +270,11 @@ export async function loadVisibleLoan(actor: Actor, loanId: string): Promise<Loa
   if (!loan) throw notFound('Loan not found');
 
   if (actor.role === 'borrower' && loan.borrower_id !== actor.id) throw notFound('Loan not found');
-  if (actor.role === 'lender' && loan.lender_id !== actor.id) throw notFound('Loan not found');
+  if (actor.role === 'staff' && loan.lender_id !== actor.id) throw notFound('Loan not found');
   return loan;
 }
 
-function assertLenderOwns(actor: Actor, loan: LoanRecord): void {
+function assertStaffOwns(actor: Actor, loan: LoanRecord): void {
   if (loan.lender_id !== actor.id) throw notFound('Loan not found');
 }
 
@@ -282,20 +282,20 @@ export async function listLenderOptions() {
   const rows = await query<{
     id: string;
     full_name: string;
-    business_name: string | null;
+    staff_id: string | null;
     default_rate_bps: number | null;
     max_principal_cents: number | null;
   }>(
-    `SELECT u.id, u.full_name, lp.business_name, lp.default_rate_bps, lp.max_principal_cents
+    `SELECT u.id, u.full_name, lp.staff_id, lp.default_rate_bps, lp.max_principal_cents
        FROM users u
        LEFT JOIN lender_profiles lp ON lp.user_id = u.id
-      WHERE u.role = 'lender' AND u.status = 'active'
-      ORDER BY COALESCE(lp.business_name, u.full_name)`,
+      WHERE u.role = 'staff' AND u.status = 'active'
+      ORDER BY u.full_name`,
   );
   return rows.map((row) => ({
     id: row.id,
     fullName: row.full_name,
-    businessName: row.business_name,
+    institutionName: row.staff_id,
     defaultRateBps: row.default_rate_bps ?? 1000,
     maxPrincipalCents: row.max_principal_cents ?? 50_000_00,
   }));
@@ -307,10 +307,10 @@ export async function createApplication(actor: Actor, input: ApplyLoanInput, req
   const lender = await queryOne<{ id: string; default_rate_bps: number | null; max_principal_cents: number | null }>(
     `SELECT u.id, lp.default_rate_bps, lp.max_principal_cents
        FROM users u LEFT JOIN lender_profiles lp ON lp.user_id = u.id
-      WHERE u.id = $1 AND u.role = 'lender' AND u.status = 'active'`,
+      WHERE u.id = $1 AND u.role = 'staff' AND u.status = 'active'`,
     [input.lenderId],
   );
-  if (!lender) throw badRequest('Select an active moneylender');
+  if (!lender) throw badRequest('Select an active staff member');
 
   const maxPrincipal = lender.max_principal_cents ?? 50_000_00;
   if (input.principalCents > maxPrincipal) {
@@ -388,7 +388,7 @@ export async function listLoans(actor: Actor, filters: LoanListQuery) {
   if (actor.role === 'borrower') {
     params.push(actor.id);
     conditions.push(`l.borrower_id = $${params.length}`);
-  } else if (actor.role === 'lender') {
+  } else if (actor.role === 'staff') {
     params.push(actor.id);
     conditions.push(`l.lender_id = $${params.length}`);
   }
@@ -506,9 +506,9 @@ export async function getLoan(actor: Actor, loanId: string) {
 }
 
 export async function verifyIdentity(actor: Actor, loanId: string, note: string | undefined, req: Request) {
-  if (actor.role !== 'lender') throw forbidden('Only the lender can verify identity');
+  if (actor.role !== 'staff') throw forbidden('Only the enterprise can verify identity');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertLenderOwns(actor, loan);
+  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'pending' && loan.status !== 'under_review') {
     throw conflict(`Cannot verify identity on a ${loan.status} loan`);
@@ -540,7 +540,7 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
     { text: `Issued ${decidedAt.toISOString().slice(0, 10)}`, size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'PARTIES', size: 10, bold: true },
-    { text: `Lender: ${loan.lender_business ?? loan.lender_name}` },
+    { text: `Lender: ${loan.lender_institution ?? loan.lender_name}` },
     { text: `Borrower: ${loan.borrower_name}` },
     { text: '', gapBefore: 8 },
     { text: 'LOAN TERMS', size: 10, bold: true },
@@ -583,9 +583,9 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
 }
 
 export async function decide(actor: Actor, loanId: string, input: DecisionInput, req: Request) {
-  if (actor.role !== 'lender') throw forbidden('Only the lender can decide on a loan');
+  if (actor.role !== 'staff') throw forbidden('Only the enterprise can decide on a loan');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertLenderOwns(actor, loan);
+  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'pending' && loan.status !== 'under_review') {
     throw conflict(`This loan is already ${loan.status}`);
@@ -686,9 +686,9 @@ export async function decide(actor: Actor, loanId: string, input: DecisionInput,
  * decides, which is exactly the "fraud detection with holds" requirement.
  */
 export async function disburse(actor: Actor, loanId: string, input: DisburseInput, req: Request) {
-  if (actor.role !== 'lender') throw forbidden('Only the lender can disburse');
+  if (actor.role !== 'staff') throw forbidden('Only the enterprise can disburse');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertLenderOwns(actor, loan);
+  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'approved') {
     throw conflict(`Only an approved loan can be disbursed (this loan is ${loan.status})`);

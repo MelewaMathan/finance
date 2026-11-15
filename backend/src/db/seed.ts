@@ -18,8 +18,8 @@ export const DEMO_PASSWORD = 'Passw0rd!demo';
 interface SeedPerson {
   email: string;
   fullName: string;
-  role: 'borrower' | 'lender' | 'auditor';
-  businessName?: string;
+  role: 'borrower' | 'staff' | 'auditor';
+  staffId?: string;
   profile?: {
     nationalId?: string;
     phone?: string;
@@ -32,10 +32,10 @@ interface SeedPerson {
 
 export const demoPeople: SeedPerson[] = [
   {
-    email: 'lender@smf.demo',
+    email: 'staff@smf.demo',
     fullName: 'Amani Kariuki',
-    role: 'lender',
-    businessName: 'Amani Micro Credit',
+    role: 'staff',
+    staffId: 'SMF-STAFF-001',
   },
   {
     email: 'borrower@smf.demo',
@@ -88,10 +88,10 @@ async function upsertPerson(person: SeedPerson, passwordHash: string): Promise<s
     );
     const userId = inserted.rows[0].id;
 
-    if (person.role === 'lender') {
-      await client.query('INSERT INTO lender_profiles (user_id, business_name) VALUES ($1, $2)', [
+    if (person.role === 'staff') {
+      await client.query('INSERT INTO lender_profiles (user_id, staff_id) VALUES ($1, $2)', [
         userId,
-        person.businessName ?? null,
+        person.staffId ?? null,
       ]);
     }
 

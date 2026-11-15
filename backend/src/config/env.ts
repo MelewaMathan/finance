@@ -79,6 +79,14 @@ const schema = z.object({
   PENALTY_GRACE_DAYS: z.coerce.number().int().min(0).max(90).default(3),
 
   REPORT_STORAGE_DIR: z.string().default('storage/reports'),
+
+  // Single enterprise configuration.
+  ENTERPRISE_NAME: z.string().default('SecureMicrofinance Enterprise'),
+  // Invite code that lets a person self-register as staff.
+  // Keep this secret; share it only with authorised administrators.
+  STAFF_INVITE_CODE: z.string().min(8).default('smf-staff-invite-change-me'),
+  ENTERPRISE_DEFAULT_RATE_BPS: z.coerce.number().int().min(0).max(10000).default(1000),
+  ENTERPRISE_MAX_PRINCIPAL_CENTS: z.coerce.number().int().positive().default(50_000_00),
 });
 
 const parsed = schema.safeParse(process.env);

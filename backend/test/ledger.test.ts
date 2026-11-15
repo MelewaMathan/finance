@@ -25,7 +25,7 @@ describe('ledger', () => {
   }
 
   async function lender(email = 'lender@ledger.test'): Promise<Session> {
-    return register(email, { fullName: 'Amani Mwangi', role: 'lender', businessName: 'Amani Micro Credit' });
+    return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
   /** Walks the loan to a cleared disbursement and returns the loan id. */

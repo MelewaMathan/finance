@@ -6,7 +6,7 @@ import type { Role } from '../types/express';
 
 const accessPayload = z.object({
   sub: z.string().uuid(),
-  role: z.enum(['borrower', 'lender', 'auditor']),
+  role: z.enum(['borrower', 'staff', 'auditor']),
   typ: z.literal('access'),
 });
 
@@ -40,7 +40,7 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 }
 
-/** Role gate. Use per route, e.g. requireRole('lender'). */
+/** Role gate. Use per route, e.g. requireRole('staff'). */
 export function requireRole(...roles: Role[]) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     if (!req.user) {

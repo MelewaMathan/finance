@@ -47,7 +47,7 @@ async function borrower(email: string): Promise<Session> {
 }
 
 async function lender(email = 'lender@fraud.test'): Promise<Session> {
-  return register(email, { fullName: 'Amani Mwangi', role: 'lender', businessName: 'Amani Micro Credit' });
+  return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
 }
 
 /** A loan taken through approval and disbursement, ready to be repaid. */

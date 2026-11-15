@@ -9,7 +9,7 @@ import { moneySchema, paginationSchema, uuidSchema } from '../../middleware/vali
  * "apply" for a zero-interest loan.
  */
 export const applyLoanSchema = z.object({
-  lenderId: uuidSchema,
+  lenderId: z.string().uuid('lenderId must be a valid UUID'),
   principalCents: moneySchema.min(10_000, 'minimum loan is KES 100').max(100_000_000, 'maximum loan is KES 1,000,000'),
   termCount: z.coerce.number().int().min(1, 'term must be at least 1 period').max(365, 'term cannot exceed 365 periods'),
   frequency: z.enum(['daily', 'weekly', 'monthly']),

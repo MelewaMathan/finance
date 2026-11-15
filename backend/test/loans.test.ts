@@ -29,7 +29,7 @@ describe('loans', () => {
   }
 
   async function lender(email = 'lender@loans.test'): Promise<Session> {
-    return register(email, { fullName: 'Amani Mwangi', role: 'lender', businessName: 'Amani Micro Credit' });
+    return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
   async function applyLoan(borrower: Session, lenderId: string, overrides: Record<string, unknown> = {}) {

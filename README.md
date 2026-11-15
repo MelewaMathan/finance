@@ -1,6 +1,6 @@
 # SecureMicrofinance
 
-A blockchain-backed microfinance prototype for **private individual moneylenders ("shylocks") and their borrowers**,
+A blockchain-backed microfinance prototype for **borrowers and staff loan officers**,
 built as a security-focused university project. It records money movements on a public ledger as
 **hashes and timestamps only**, keeps every piece of personal data off-chain and encrypted, and gives a
 read-only forensic auditor the tools to prove that the off-chain record has not been rewritten.
@@ -12,9 +12,9 @@ read-only forensic auditor the tools to prove that the off-chain record has not 
 
 ## 1. What problem this solves
 
-A private moneylender keeps a paper or spreadsheet ledger. Both sides of a dispute therefore depend on the
-lender's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
-edited afterwards. A licensed institution has auditors; a shylock with twenty customers does not.
+A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute therefore depend on the
+staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
+edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
 This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
 
@@ -35,7 +35,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Lender (moneylender)** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another lender's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
 | **Forensic auditor** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |

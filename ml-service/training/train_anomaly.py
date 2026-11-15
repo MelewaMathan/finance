@@ -60,7 +60,7 @@ def _normal_population(rows: int, seed: int) -> np.ndarray:
 
 
 def _synthetic_anomalies(rows: int, seed: int) -> np.ndarray:
-    """Behaviours a moneylender would want flagged, built for evaluation only."""
+    """Behaviours a staff reviewer would want flagged, built for evaluation only."""
     rng = np.random.default_rng(seed + 1)
     blocks = []
 

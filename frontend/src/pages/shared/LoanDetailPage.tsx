@@ -131,7 +131,7 @@ export function LoanDetailPage() {
       <div>
         <PageHeader title="Loan" />
         <Alert>{loadError}</Alert>
-        <Link to={user?.role === 'lender' ? '/lender/applications' : '/borrower/loans'} className="mt-4 inline-block text-sm font-semibold text-brand-700 hover:underline">
+        <Link to={user?.role === 'staff' ? '/enterprise/applications' : '/borrower/loans'} className="mt-4 inline-block text-sm font-semibold text-brand-700 hover:underline">
           ← Back to loans
         </Link>
       </div>
@@ -140,12 +140,13 @@ export function LoanDetailPage() {
 
   if (!loan) return <Spinner label="Loading loan" />;
 
-  const isLender = user?.role === 'lender';
-  const canVerify = isLender && (loan.status === 'pending' || loan.status === 'under_review');
-  const canDecide = isLender && (loan.status === 'pending' || loan.status === 'under_review') && Boolean(loan.identityVerified);
-  const canDisburse = isLender && loan.status === 'approved';
-  const canPay = (user?.role === 'lender' || user?.role === 'borrower') && (loan.status === 'disbursed' || loan.status === 'active');
-  const backTo = isLender ? '/lender/applications' : '/borrower/loans';
+  const isStaff = user?.role === 'staff';
+  const canVerify = isStaff && (loan.status === 'pending' || loan.status === 'under_review');
+  const canDecide = isStaff && (loan.status === 'pending' || loan.status === 'under_review') && Boolean(loan.identityVerified);
+  const canDisburse = isStaff && loan.status === 'approved';
+  const canPay = (user?.role === 'staff' || user?.role === 'borrower') && (loan.status === 'disbursed' || loan.status === 'active');
+  const backTo = isStaff ? '/enterprise/applications' : '/borrower/loans';
+  const isLender = isStaff;
 
   // Advisory only: shown to inform the decision, never to make it.
   const scoreCard = (
@@ -184,7 +185,7 @@ export function LoanDetailPage() {
               ? `Model ${loan.score.modelVersion} · ${loan.score.latencyMs} ms`
               : `Fallback heuristic (${loan.score.modelVersion}) — the ML service was unavailable.`}
           </p>
-          {isLender ? (
+          {isStaff ? (
             <button
               type="button"
               className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
@@ -228,8 +229,8 @@ export function LoanDetailPage() {
             </li>
           ))}
         </ul>
-        {isLender ? (
-          <Link to="/lender/fraud" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
+        {isStaff ? (
+          <Link to="/enterprise/fraud" className="mt-3 inline-block text-sm font-semibold text-brand-700 hover:underline">
             Open the review queue →
           </Link>
         ) : null}
@@ -240,7 +241,7 @@ export function LoanDetailPage() {
     <div>
       <PageHeader
         title={`Loan ${loan.ref}`}
-        subtitle={`${loan.purpose} · ${loan.lender.businessName ?? loan.lender.fullName}`}
+        subtitle={`${loan.purpose} · ${loan.lender.institutionName ?? loan.lender.fullName}`}
         actions={
           <Link to={backTo} className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
             Back
@@ -707,7 +708,7 @@ export function LoanDetailPage() {
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">Lender</dt>
-                <dd className="text-right font-medium">{loan.lender.businessName ?? loan.lender.fullName}</dd>
+                <dd className="text-right font-medium">{loan.lender.institutionName ?? loan.lender.fullName}</dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">Applied</dt>

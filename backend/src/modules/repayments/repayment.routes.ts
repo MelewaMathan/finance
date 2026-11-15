@@ -21,7 +21,7 @@ export const repaymentsRouter = Router();
 repaymentsRouter.post(
   '/loans/:id/repayments',
   requireAuth,
-  requireRole('lender', 'borrower'),
+  requireRole('staff', 'borrower'),
   validate(idParamSchema, 'params'),
   validate(repaymentSchema),
   async (req, res) => {

@@ -13,7 +13,7 @@ const TABS: Array<{ key: LoanStatus | 'all'; label: string }> = [
   { key: 'all', label: 'All' },
 ];
 
-/** Lender application queue, scoped to the signed-in lender's book by the API. */
+/** Enterprise application queue, scoped to the signed-in enterprise book by the API. */
 export function ApplicationsPage() {
   const [tab, setTab] = useState<LoanStatus | 'all'>('pending');
   const [query, setQuery] = useState('');
@@ -136,7 +136,7 @@ export function ApplicationsPage() {
                     <Badge tone={STATUS_TONE[loan.status]}>{STATUS_LABEL[loan.status]}</Badge>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <Link to={`/lender/loans/${loan.id}`} className="text-sm font-semibold text-brand-700 hover:underline">
+                    <Link to={`/enterprise/loans/${loan.id}`} className="text-sm font-semibold text-brand-700 hover:underline">
                       Review →
                     </Link>
                   </td>

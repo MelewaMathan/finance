@@ -34,8 +34,13 @@ const registerSchema = z.object({
   email: emailSchema,
   password: passwordSchema,
   fullName: z.string().trim().min(2).max(120),
-  role: z.enum(['borrower', 'lender']),
-  businessName: z.string().trim().max(120).optional(),
+  // Borrowers self-register freely. Staff registration requires a valid invite
+  // code (checked in auth.service.ts). Auditor accounts cannot be self-registered.
+  role: z.enum(['borrower', 'staff']),
+  // Required when role === 'staff'; the backend validates it against STAFF_INVITE_CODE.
+  inviteCode: z.string().max(128).optional(),
+  // Optional staff identifier.
+  staffId: z.string().trim().max(80).optional(),
 });
 
 const loginSchema = z.object({

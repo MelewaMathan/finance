@@ -30,7 +30,7 @@ describe('credit scoring', () => {
   }
 
   async function lender(email = 'lender@scoring.test'): Promise<Session> {
-    return register(email, { fullName: 'Amani Mwangi', role: 'lender', businessName: 'Amani Micro Credit' });
+    return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
   async function apply(borrowerSession: Session, lenderId: string, overrides: Record<string, unknown> = {}) {
@@ -82,7 +82,7 @@ describe('credit scoring', () => {
 
     const stretched = await borrower('stretched@scoring.test');
     // Same income, 20x the principal, daily repayments: the shape of the loan
-    // every moneylender recognises as trouble.
+    // every experienced reviewer recognises as trouble.
     const stretchedLoan = await apply(stretched, lenderSession.userId, {
       principalCents: 2_000_000,
       termCount: 30,
