@@ -7,13 +7,21 @@ import { pool, withTransaction } from './pool';
 /**
  * Demo seed data.
  *
- * Every account uses the same password (`Passw0rd!demo`) because this is a
- * synthetic, local-only demo. The auditor account is created here rather than
- * through /auth/register on purpose: the public API can only create borrowers
- * and lenders, so an auditor must be provisioned by an administrator.
+ * Every account uses the password from DEMO_SEED_PASSWORD (required).
+ * The auditor account is created here rather than through /auth/register
+ * on purpose: the public API can only create borrowers and staff, so an
+ * auditor must be provisioned by an administrator.
+ *
+ * Safety guards:
+ *  - Refuses to run when NODE_ENV=production unless ALLOW_DEMO_SEED=true.
+ *  - Requires DEMO_SEED_PASSWORD to be set explicitly in the environment.
  */
 
-export const DEMO_PASSWORD = 'Passw0rd!demo';
+const IS_PRODUCTION = config.NODE_ENV === 'production';
+const ALLOW_DEMO_SEED = process.env.ALLOW_DEMO_SEED === 'true';
+const DEMO_SEED_PASSWORD = process.env.DEMO_SEED_PASSWORD;
+
+export const DEMO_PASSWORD = DEMO_SEED_PASSWORD ?? 'UNSET';
 
 interface SeedPerson {
   email: string;
@@ -138,11 +146,26 @@ async function upsertPerson(person: SeedPerson, passwordHash: string): Promise<s
 }
 
 export async function seed(): Promise<void> {
-  const passwordHash = await bcrypt.hash(DEMO_PASSWORD, config.BCRYPT_COST);
+  if (IS_PRODUCTION && !ALLOW_DEMO_SEED) {
+    throw new Error(
+      '[seed] Refusing to seed demo accounts in production. ' +
+        'Set ALLOW_DEMO_SEED=true to override — only do this for a live demo environment, ' +
+        'and change or delete these accounts before using real borrower data.',
+    );
+  }
+
+  if (!DEMO_SEED_PASSWORD) {
+    throw new Error(
+      '[seed] DEMO_SEED_PASSWORD is not set. ' +
+        'Add it to your .env file (e.g. DEMO_SEED_PASSWORD=Passw0rd!demo) and re-run.',
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(DEMO_SEED_PASSWORD, config.BCRYPT_COST);
   for (const person of demoPeople) {
     await upsertPerson(person, passwordHash);
   }
-  console.log(`\n[seed] demo password for every account: ${DEMO_PASSWORD}`);
+  console.log(`\n[seed] demo password for every account: ${DEMO_SEED_PASSWORD}`);
 }
 
 if (require.main === module) {

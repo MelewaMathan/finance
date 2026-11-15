@@ -7,7 +7,7 @@ import { LogoMark } from './ui';
 /**
  * Application shell: responsive sidebar on desktop, slide-over menu on
  * mobile. Navigation is derived from the authenticated role, so a borrower
- * never sees the enterprise owner or auditor destinations (the API enforces the same rule).
+ * never sees the staff or auditor destinations (the API enforces the same rule).
  */
 type IconName = 'home' | 'file' | 'cash' | 'shield' | 'clock' | 'check' | 'report' | 'user' | 'bell';
 

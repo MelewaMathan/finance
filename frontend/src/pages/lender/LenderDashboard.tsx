@@ -5,7 +5,7 @@ import { useAuth } from '../../lib/auth';
 import { formatMoney, percentFromBps } from '../../lib/format';
 import { listLoans } from '../../lib/loans';
 
-/** Enterprise dashboard: own-book metrics and the controls they operate. */
+/** Staff dashboard: own-book metrics and the controls they operate. */
 export function LenderDashboard() {
   const { user, profile } = useAuth();
   const [counts, setCounts] = useState<{ pending: number; held: number; active: number; outstanding: number } | null>(null);

@@ -13,7 +13,7 @@ const TABS: Array<{ key: LoanStatus | 'all'; label: string }> = [
   { key: 'all', label: 'All' },
 ];
 
-/** Enterprise application queue, scoped to the signed-in enterprise book by the API. */
+/** Staff application queue, scoped to the signed-in staff member's book by the API. */
 export function ApplicationsPage() {
   const [tab, setTab] = useState<LoanStatus | 'all'>('pending');
   const [query, setQuery] = useState('');

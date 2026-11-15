@@ -55,7 +55,7 @@ const INSTALLMENT_TONE: Record<string, 'neutral' | 'success' | 'warning' | 'dang
 };
 
 /**
- * Loan detail, shared by the borrower and the lender. The action panel is
+ * Loan detail, shared by the borrower and staff. The action panel is
  * derived from role + status, and the API independently enforces the same
  * rules -- hiding a button is convenience, not security.
  */
@@ -428,7 +428,7 @@ export function LoanDetailPage() {
 
           <Card
             title="Repayment schedule"
-            description={loan.installments.length === 0 ? 'A schedule is generated when the lender approves.' : `${loan.frequency} installments, flat interest per period.`}
+            description={loan.installments.length === 0 ? 'A schedule is generated when staff approve.' : `${loan.frequency} installments, flat interest per period.`}
           >
             {loan.installments.length === 0 ? (
               <p className="text-sm text-slate-500">Not issued yet.</p>
@@ -467,7 +467,7 @@ export function LoanDetailPage() {
           </Card>
 
           {canPay ? (
-            <Card title="Record a payment" description="Cash received by the lender, or a mobile-money payment the borrower is claiming.">
+            <Card title="Record a payment" description="Cash received by staff, or a mobile-money payment the borrower is claiming.">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Amount (KES)" htmlFor="payAmount" hint={`Outstanding ${formatMoney(loan.summary.outstandingCents)}`}>
                   <TextInput
@@ -666,7 +666,7 @@ export function LoanDetailPage() {
                 </button>
               </div>
             ) : (
-              <p className="text-sm text-slate-500">Generated when the lender approves.</p>
+              <p className="text-sm text-slate-500">Generated when staff approve.</p>
             )}
           </Card>
 
@@ -739,7 +739,7 @@ export function LoanDetailPage() {
               ) : null}
               {loan.decisionNote ? (
                 <div className="border-t border-slate-100 pt-3">
-                  <dt className="text-slate-500">Lender note</dt>
+                  <dt className="text-slate-500">Staff note</dt>
                   <dd className="mt-1 text-slate-700">{loan.decisionNote}</dd>
                 </div>
               ) : null}

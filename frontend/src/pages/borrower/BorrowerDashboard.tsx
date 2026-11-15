@@ -54,7 +54,7 @@ export function BorrowerDashboard() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Profile complete" value={`${completed}/${checks.length}`} hint="Lenders verify identity before approving" tone="brand" />
+        <StatCard label="Profile complete" value={`${completed}/${checks.length}`} hint="Staff verify identity before approving" tone="brand" />
         <StatCard label="Monthly income" value={formatMoney(profile?.monthlyIncomeCents ?? null)} hint="Used as alternative credit data" />
         <StatCard
           label="Outstanding"

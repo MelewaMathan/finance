@@ -7,6 +7,14 @@ read-only forensic auditor the tools to prove that the off-chain record has not 
 
 > Synthetic data only. Every account in the seed file is fictional and every number in this repository is
 > generated for the demo.
+>
+> **Demo panel:** set `VITE_SHOW_DEMO_ACCOUNTS=true` and `VITE_DEMO_PASSWORD=<password>` in the frontend
+> environment to show the clickable demo-account panel on the login page. Keep both unset or `false` in
+> production.
+>
+> **Seeded accounts in production:** `npm run db:seed` refuses to run when `NODE_ENV=production` unless
+> `ALLOW_DEMO_SEED=true` is explicitly set. If demo accounts were ever seeded into a live database, change
+> their passwords or delete them before onboarding real borrowers.
 
 ---
 
@@ -222,17 +230,20 @@ Docker instead of local processes: `docker compose up --build` (Postgres on 5543
 
 ### 5.7 Demo accounts
 
-All seeded accounts use the password `Passw0rd!demo`:
+Set `DEMO_SEED_PASSWORD` in `.env` before running `npm run db:seed` (see `.env.example`). All seeded accounts share that password.
 
 | Email | Role | Notes |
 | --- | --- | --- |
-| `borrower@smf.demo` | borrower | Grace Wanjiku, complete profile |
-| `borrower2@smf.demo` | borrower | Peter Otieno — **shares a phone number with Grace on purpose**, to trigger the identity-conflict rule |
-| `lender@smf.demo` | lender | Amani Micro Credit |
-| `auditor@smf.demo` | auditor | Read-only forensic desk |
+| `staff@smf.demo` | Staff | Amani Kariuki — reviews applications and manages disbursements |
+| `borrower@smf.demo` | Borrower | Grace Wanjiku, complete profile |
+| `borrower2@smf.demo` | Borrower | Peter Otieno — **shares a phone number with Grace on purpose**, to trigger the identity-conflict rule |
+| `auditor@smf.demo` | Auditor | Read-only forensic desk |
 
-Auditors cannot self-register: the public API only creates borrowers and lenders, so the account is
-provisioned by seed or by an administrator.
+Auditors cannot self-register: the public API requires a staff invite code for Staff accounts and allows open registration only for Borrowers. The auditor account is provisioned by seed or by a database administrator.
+
+> **Warning:** `db:seed` refuses to run when `NODE_ENV=production` unless `ALLOW_DEMO_SEED=true` is set.
+> If demo accounts were ever seeded into a live database, change their passwords or delete them before
+> onboarding real borrowers.
 
 ---
 
@@ -240,13 +251,13 @@ provisioned by seed or by an administrator.
 
 1. **Borrower applies.** Sign in as `borrower@smf.demo` → *Apply for a loan* → KES 5,000, 4 weekly terms.
    Open the loan: the advisory score card shows the model version, the score and the factor contributions.
-2. **Lender verifies and approves.** Sign in as `lender@smf.demo` → *Applications* → verify identity →
+2. **Staff verifies and approves.** Sign in as `staff@smf.demo` → *Applications* → verify identity →
    approve at 10%. The PDF agreement is generated and its SHA-256 is attached to the loan.
 3. **Disburse.** The money path runs both fraud layers, then anchors the payment. On the loan page, open
    *Ledger proof*: the payment reads `verified` when Hardhat is running, `unanchored` when it is not.
 4. **Borrower repays.** Record a repayment of KES 2,000. The schedule shows the allocation (penalty →
    interest → principal) and the loan moves to `active`. Download the statement as PDF and CSV.
-5. **Trigger a hold.** As the lender, disburse or repay with a forged-looking reference (e.g. `0000000000`),
+5. **Trigger a hold.** As staff, disburse or repay with a forged-looking reference (e.g. `0000000000`),
    or submit the same M-Pesa code twice. The response is **202 with `held: true`**: the claim is recorded,
    the money has not moved, and an alert appears in the fraud queue.
 6. **Review it.** In *Fraud queue*, read the detail (which rule, which values), write a note, then either
@@ -299,7 +310,7 @@ and stubs nothing except the two network seams: the ML service (`ML_FORCE_FALLBA
 | Suite | Tests | What it proves |
 | --- | --- | --- |
 | `auth` | 9 | registration, login, lockout, refresh rotation and reuse detection, password change revoking sessions |
-| `rbac` | 6 | no token / bad token rejected; auditors cannot write; lenders cannot edit borrower profiles; the role is re-read from the database, not trusted from the token |
+| `rbac` | 6 | no token / bad token rejected; auditors cannot write; staff cannot edit borrower profiles; the role is re-read from the database, not trusted from the token |
 | `encryption` | 5 | national ID and phone are ciphertext at rest, blind indexes detect duplicates, raw values never leave the API |
 | `audit` | 4 | every auth event is chained; UPDATE/DELETE/TRUNCATE rejected by the database; an edited row is detected |
 | `loans` | 11 | apply → verify → decide → agreement hash → disburse, including wrong-role and wrong-state attempts, and a download that refuses a swapped PDF |

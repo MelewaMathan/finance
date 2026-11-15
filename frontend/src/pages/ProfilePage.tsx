@@ -73,7 +73,7 @@ export function ProfilePage() {
 
   return (
     <div>
-      <PageHeader title="My profile" subtitle="Keep your details current — the operating enterprise relies on them for verification." />
+      <PageHeader title="My profile" subtitle="Keep your details current — staff rely on them for identity verification." />
 
       <div className="grid gap-5 lg:grid-cols-5">
         <Card title="Account" className="lg:col-span-2">
@@ -106,7 +106,7 @@ export function ProfilePage() {
           </div>
         </Card>
 
-        <Card title={user.role === 'borrower' ? 'Identity details' : 'Enterprise profile'} className="lg:col-span-3">
+        <Card title={user.role === 'borrower' ? 'Identity details' : 'Staff profile'} className="lg:col-span-3">
           {user.role === 'borrower' ? (
             <form className="space-y-4" onSubmit={onSubmit} noValidate>
               {error ? <Alert>{error}</Alert> : null}
