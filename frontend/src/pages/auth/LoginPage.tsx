@@ -1,29 +1,211 @@
-import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthLayout } from '../../components/AppShell';
 import { Alert, Field, Spinner, TextInput } from '../../components/ui';
 import { homeFor, useAuth } from '../../lib/auth';
 import { fieldErrors, messageOf } from '../../lib/errors';
 
+// ---------------------------------------------------------------------------
+// Env-controlled demo panel
+// ---------------------------------------------------------------------------
 const SHOW_DEMO = import.meta.env.VITE_SHOW_DEMO_ACCOUNTS === 'true';
 const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD as string | undefined;
 
-const DEMO_ACCOUNTS = [
-  { role: 'Staff', email: 'staff@smf.demo' },
-  { role: 'Borrower', email: 'borrower@smf.demo' },
-  { role: 'Auditor', email: 'auditor@smf.demo' },
-];
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+type RoleView = 'borrower' | 'staff' | 'auditor';
 
+const ROLE_META: Record<
+  RoleView,
+  { heading: string; tagline: string; demoEmail: string }
+> = {
+  borrower: {
+    heading: 'Sign in',
+    tagline: 'Sign in to apply for loans and track your repayments.',
+    demoEmail: 'borrower@smf.demo',
+  },
+  staff: {
+    heading: 'Staff sign in',
+    tagline: 'Sign in to review applications and manage repayments.',
+    demoEmail: 'staff@smf.demo',
+  },
+  auditor: {
+    heading: 'Auditor sign in',
+    tagline: 'Sign in for read-only forensic access to the audit trail.',
+    demoEmail: 'auditor@smf.demo',
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Hamburger menu
+// ---------------------------------------------------------------------------
+export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const navigate = useNavigate();
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    function onMouseDown(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [open]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [open]);
+
+  function go(role: RoleView) {
+    setOpen(false);
+    if (role === 'borrower') {
+      navigate('/login');
+    } else {
+      navigate(`/login?role=${role}`);
+    }
+  }
+
+  const items: { role: RoleView; label: string }[] = [
+    { role: 'borrower', label: 'Borrower sign in' },
+    { role: 'staff', label: 'Staff sign in' },
+    { role: 'auditor', label: 'Auditor sign in' },
+  ];
+
+  return (
+    <div className="relative" ref={menuRef}>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Open menu"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        onClick={() => setOpen((v) => !v)}
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        {/* Three-line hamburger */}
+        <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+          <rect x="2" y="4"  width="16" height="2" rx="1" />
+          <rect x="2" y="9"  width="16" height="2" rx="1" />
+          <rect x="2" y="14" width="16" height="2" rx="1" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-11 z-50 min-w-[13rem] rounded-2xl border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {items.map((item) => {
+            const active = currentRole === item.role;
+            return (
+              <button
+                key={item.role}
+                role="menuitem"
+                type="button"
+                onClick={() => go(item.role)}
+                className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm transition-colors hover:bg-slate-50 ${
+                  active ? 'font-semibold text-brand-700' : 'text-slate-700'
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${active ? 'bg-brand-600' : 'bg-transparent'}`}
+                  aria-hidden="true"
+                />
+                {item.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Demo panel — shows only the account relevant to the current role view
+// ---------------------------------------------------------------------------
+function DemoPanel({
+  role,
+  onUse,
+}: {
+  role: RoleView;
+  onUse: (email: string) => void;
+}) {
+  if (!SHOW_DEMO || !DEMO_PASSWORD) return null;
+  const { demoEmail } = ROLE_META[role];
+
+  return (
+    <div className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        Demo account
+      </p>
+      <p className="mt-1 text-xs text-slate-500">
+        Password: <code className="font-mono">{DEMO_PASSWORD}</code>
+      </p>
+      <div className="mt-3">
+        <button
+          type="button"
+          onClick={() => onUse(demoEmail)}
+          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-brand-400"
+        >
+          <span className="block font-semibold text-slate-800">
+            {role.charAt(0).toUpperCase() + role.slice(1)}
+          </span>
+          <span className="block truncate text-slate-500">{demoEmail}</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main login page
+// ---------------------------------------------------------------------------
 export function LoginPage() {
   const { login, status, user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Derive current view from ?role= param; unknown values fall back to borrower.
+  const rawRole = searchParams.get('role') ?? 'borrower';
+  const roleView: RoleView =
+    rawRole === 'staff' || rawRole === 'auditor' ? rawRole : 'borrower';
+
+  const meta = ROLE_META[roleView];
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
-  if (status === 'authenticated' && user) return <Navigate to={homeFor(user.role)} replace />;
+  // Reset the form whenever the user switches between role views.
+  useEffect(() => {
+    setEmail('');
+    setPassword('');
+    setError(null);
+    setErrors({});
+  }, [roleView]);
+
+  // Already authenticated — redirect to their actual dashboard.
+  if (status === 'authenticated' && user) {
+    return <Navigate to={homeFor(user.role)} replace />;
+  }
 
   async function onSubmit(event: FormEvent) {
     event.preventDefault();
@@ -32,29 +214,30 @@ export function LoginPage() {
     setErrors({});
     try {
       await login(email, password);
-      const role = email.includes('staff') ? '/enterprise' : email.includes('auditor') ? '/auditor' : '/borrower';
-      navigate(role, { replace: true });
+      // login() updates the auth context. The Navigate above will fire on
+      // re-render and send the user to homeFor(user.role) — their REAL role,
+      // regardless of which view (borrower / staff / auditor) they used.
     } catch (caught) {
-      setError(messageOf(caught));
+      // Always return a generic message so the UI cannot be used to identify
+      // which email addresses belong to staff or auditor accounts.
+      setError('Invalid email or password');
       setErrors(fieldErrors(caught));
     } finally {
       setBusy(false);
     }
   }
 
-  function useDemo(demoEmail: string) {
+  function fillDemo(demoEmail: string) {
     setEmail(demoEmail);
     setPassword(DEMO_PASSWORD ?? '');
   }
 
   return (
-    <AuthLayout>
+    <AuthLayout headerRight={<RoleMenu currentRole={roleView} />}>
       <div className="w-full max-w-md">
         <div className="card p-6 sm:p-8">
-          <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Access the SecureMicrofinance ledger, repayments and audit trail.
-          </p>
+          <h1 className="text-xl font-semibold text-slate-900">{meta.heading}</h1>
+          <p className="mt-1 text-sm text-slate-500">{meta.tagline}</p>
 
           <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
             {error ? <Alert>{error}</Alert> : null}
@@ -66,7 +249,7 @@ export function LoginPage() {
                 autoComplete="username"
                 required
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
               />
             </Field>
@@ -78,7 +261,7 @@ export function LoginPage() {
                 autoComplete="current-password"
                 required
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••"
               />
             </Field>
@@ -88,33 +271,37 @@ export function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-4 text-center text-sm text-slate-500">
-            New borrower or staff member?{' '}
-            <Link to="/register" className="font-semibold text-brand-700 hover:underline">
-              Create an account
-            </Link>
-          </p>
+          {/* Bottom link — varies by view */}
+          {roleView === 'borrower' && (
+            <p className="mt-4 text-center text-sm text-slate-500">
+              New borrower?{' '}
+              <Link
+                to="/register"
+                className="font-semibold text-brand-700 hover:underline"
+              >
+                Create an account
+              </Link>
+            </p>
+          )}
+          {roleView === 'staff' && (
+            <p className="mt-4 text-center text-sm text-slate-500">
+              Have an invite code?{' '}
+              <Link
+                to="/register?role=staff"
+                className="font-semibold text-brand-700 hover:underline"
+              >
+                Register as staff
+              </Link>
+            </p>
+          )}
+          {roleView === 'auditor' && (
+            <p className="mt-4 text-center text-sm text-slate-500 italic">
+              Auditor accounts are provisioned by an administrator.
+            </p>
+          )}
         </div>
 
-        {SHOW_DEMO && DEMO_PASSWORD ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Demo accounts</p>
-            <p className="mt-1 text-xs text-slate-500">Password for all: <code className="font-mono">{DEMO_PASSWORD}</code></p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {DEMO_ACCOUNTS.map((account) => (
-                <button
-                  key={account.email}
-                  type="button"
-                  onClick={() => useDemo(account.email)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-brand-400"
-                >
-                  <span className="block font-semibold text-slate-800">{account.role}</span>
-                  <span className="block truncate text-slate-500">{account.email}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+        <DemoPanel role={roleView} onUse={fillDemo} />
       </div>
     </AuthLayout>
   );
