@@ -10,7 +10,7 @@ read-only forensic auditor the tools to prove that the off-chain record has not 
 >
 > **Demo panel:** set `VITE_SHOW_DEMO_ACCOUNTS=true` and `VITE_DEMO_PASSWORD=<password>` in the frontend
 > environment to show the clickable demo-account panel on the login page. Keep both unset or `false` in
-> production.
+> production. See [section 5.8](#58-frontend-environment-variables-vite_) for details.
 >
 > **Seeded accounts in production:** `npm run db:seed` refuses to run when `NODE_ENV=production` unless
 > `ALLOW_DEMO_SEED=true` is explicitly set. If demo accounts were ever seeded into a live database, change
@@ -244,6 +244,27 @@ Auditors cannot self-register: the public API requires a staff invite code for S
 > **Warning:** `db:seed` refuses to run when `NODE_ENV=production` unless `ALLOW_DEMO_SEED=true` is set.
 > If demo accounts were ever seeded into a live database, change their passwords or delete them before
 > onboarding real borrowers.
+
+### 5.8 Frontend environment variables (`VITE_`)
+
+Vite bakes `VITE_` variables into the browser bundle at build time. They are visible to anyone who
+downloads the built JavaScript. Never put secrets in them. The demo password is intentionally low-value;
+treat any `VITE_` value as public.
+
+Frontend variables also require a full redeploy before they take effect — they are not read at runtime.
+On Vercel, save the variable and then trigger a new deployment.
+
+| Variable | Purpose | Production value |
+| --- | --- | --- |
+| `VITE_SHOW_DEMO_ACCOUNTS` | `"true"` shows the demo-account panel on the login page | unset or `"false"` |
+| `VITE_DEMO_PASSWORD` | Password shown in the demo panel (auto-fills the form) | unset |
+
+**Vercel setup for a demo deployment:**
+1. Go to your Vercel project → Settings → Environment Variables.
+2. Add `VITE_SHOW_DEMO_ACCOUNTS = true` scoped to **Preview** (not Production).
+3. Add `VITE_DEMO_PASSWORD = <your demo password>` scoped to **Preview**.
+4. Trigger a redeploy of the preview branch — the panel appears immediately.
+5. Leave both variables unset on the **Production** environment.
 
 ---
 

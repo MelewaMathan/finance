@@ -1,5 +1,6 @@
 import { renderPdf, type PdfLine } from '../../lib/pdf';
 import { formatMoneyForDocument } from '../../lib/format';
+import { config } from '../../config/env';
 import { getLoan, type Actor } from '../loans/loan.service';
 
 /**
@@ -44,7 +45,7 @@ export async function renderStatementPdf(actor: Actor, loanId: string): Promise<
     { text: `Status: ${statement.status} · Generated ${statement.generatedAt.slice(0, 19).replace('T', ' ')} UTC`, size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'PARTIES', size: 10, bold: true },
-    { text: `Lender: ${statement.lender.institutionName ?? statement.lender.fullName}` },
+    { text: `Lender: ${config.INSTITUTION_NAME}` },
     { text: `Borrower: ${statement.borrower.fullName}` },
     { text: '', gapBefore: 8 },
     { text: 'TERMS', size: 10, bold: true },
@@ -107,7 +108,7 @@ export function statementCsv(statement: Statement): string {
     `Reference,${cell(statement.ref)}`,
     `Generated,${cell(statement.generatedAt)}`,
     `Borrower,${cell(statement.borrower.fullName)}`,
-    `Lender,${cell(statement.lender.institutionName ?? statement.lender.fullName)}`,
+    `Lender,${cell(config.INSTITUTION_NAME)}`,
     `Status,${cell(statement.status)}`,
     `Principal,${money(statement.terms.principalCents)}`,
     `Rate bps,${statement.terms.rateBps}`,

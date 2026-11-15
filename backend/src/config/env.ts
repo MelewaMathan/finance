@@ -82,6 +82,9 @@ const schema = z.object({
 
   // Single enterprise configuration.
   ENTERPRISE_NAME: z.string().default('SecureMicrofinance Enterprise'),
+  // Human-readable institution name printed on loan agreements and statements.
+  // Set this to the organisation's legal trading name before going live.
+  INSTITUTION_NAME: z.string().default('SecureMicrofinance'),
   // Invite code that lets a person self-register as staff.
   // Keep this secret; share it only with authorised administrators.
   STAFF_INVITE_CODE: z.string().min(8).default('smf-staff-invite-change-me'),

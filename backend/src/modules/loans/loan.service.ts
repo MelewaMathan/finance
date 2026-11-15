@@ -540,7 +540,7 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
     { text: `Issued ${decidedAt.toISOString().slice(0, 10)}`, size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'PARTIES', size: 10, bold: true },
-    { text: `Lender: ${loan.lender_institution ?? loan.lender_name}` },
+    { text: `Lender: ${config.INSTITUTION_NAME}` },
     { text: `Borrower: ${loan.borrower_name}` },
     { text: '', gapBefore: 8 },
     { text: 'LOAN TERMS', size: 10, bold: true },
