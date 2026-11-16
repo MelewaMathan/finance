@@ -13,8 +13,8 @@
    /register in one place. All other pages are unaffected.
    --------------------------------------------------------------------------- */
 :root {
-  --auth-grad-from: #0b1220;   /* deep navy */
-  --auth-grad-to:   #064e3b;   /* forest green (brand-900) */
+  --auth-grad-from: #1e293b;   /* slate-800 */
+  --auth-grad-to:   #064e3b;   /* brand-900 / forest green */
 }
 
 @layer base {
