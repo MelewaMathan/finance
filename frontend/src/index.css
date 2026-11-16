@@ -6,6 +6,17 @@
    Small design system. Keeping the primitives here means pages stay readable
    and consistent, and the whole UI is mobile-first by default.
    --------------------------------------------------------------------------- */
+
+/* ---------------------------------------------------------------------------
+   Auth-page background
+   Change --auth-grad-from and --auth-grad-to here to repaint /login and
+   /register in one place. All other pages are unaffected.
+   --------------------------------------------------------------------------- */
+:root {
+  --auth-grad-from: #0b1220;   /* deep navy */
+  --auth-grad-to:   #064e3b;   /* forest green (brand-900) */
+}
+
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;
@@ -19,6 +30,15 @@
 }
 
 @layer components {
+  /* Auth layout wrapper — covers the full viewport with the gradient,
+     including on short pages and when the user over-scrolls on mobile. */
+  .auth-layout {
+    min-height: 100dvh;
+    background: linear-gradient(135deg, var(--auth-grad-from) 0%, var(--auth-grad-to) 100%);
+    /* Prevent the rubber-band / over-scroll area from showing white on iOS. */
+    background-attachment: fixed;
+  }
+
   .card {
     @apply rounded-2xl border border-slate-200 bg-white shadow-card;
   }

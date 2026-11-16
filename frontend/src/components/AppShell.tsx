@@ -176,6 +176,11 @@ export function AppShell() {
 /**
  * Wraps a page in a consistent shell for the auth screens.
  *
+ * The `.auth-layout` CSS class applies a full-viewport dark gradient
+ * (navy → forest green). Header text is light so it reads against the dark
+ * background; cards stay white. To change the colours edit --auth-grad-from
+ * and --auth-grad-to in src/index.css — no component changes needed.
+ *
  * Pass `headerRight` to render something in the top-right corner of the
  * header — the login page uses this slot for the hamburger role-switcher.
  */
@@ -187,19 +192,20 @@ export function AuthLayout({
   headerRight?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50">
+    <div className="auth-layout flex flex-col">
       <header className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-3">
           <LogoMark className="h-9 w-9" />
           <div>
-            <p className="text-sm font-semibold text-slate-900">SecureMicrofinance</p>
-            <p className="text-xs text-slate-500">Blockchain-verified microfinance</p>
+            {/* White / light-green text on the dark gradient — contrast > 7:1 */}
+            <p className="text-sm font-semibold text-white">SecureMicrofinance</p>
+            <p className="text-xs text-brand-200">Blockchain-verified microfinance</p>
           </div>
         </div>
         {headerRight ? <div>{headerRight}</div> : null}
       </header>
-      <main className="flex flex-1 items-center justify-center px-4 pb-12">{children}</main>
-      <footer className="px-6 py-4 text-center text-xs text-slate-400">
+      <main className="flex flex-1 items-center justify-center px-4 pb-12 pt-4">{children}</main>
+      <footer className="px-6 py-4 text-center text-xs text-brand-300">
         Demo deployment · synthetic data only · no real personal information
       </footer>
     </div>

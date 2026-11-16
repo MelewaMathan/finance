@@ -95,7 +95,7 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
-        className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+        className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
         {/* Three-line hamburger */}
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
