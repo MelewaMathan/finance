@@ -53,6 +53,7 @@ const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'auditor', NavItem[]> = {
   ],
   auditor: [
     { to: '/auditor', label: 'Overview', icon: 'home', end: true },
+    { to: '/auditor/access-requests', label: 'Access requests', icon: 'shield' },
     { to: '/auditor/audit', label: 'Audit log', icon: 'report' },
     { to: '/auditor/timeline', label: 'Timeline', icon: 'clock' },
     { to: '/auditor/integrity', label: 'Integrity checks', icon: 'check' },

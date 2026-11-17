@@ -64,6 +64,10 @@ export function AuditorDashboard() {
 
         <Card title="Start an investigation">
           <div className="space-y-3">
+            <Link to="/auditor/access-requests" className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 hover:border-brand-400">
+              <span className="text-sm font-medium text-slate-900">Review staff login requests</span>
+              <span className="text-slate-400">→</span>
+            </Link>
             <Link to="/auditor/audit" className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 hover:border-brand-400">
               <span className="text-sm font-medium text-slate-900">Search the audit log</span>
               <span className="text-slate-400">→</span>

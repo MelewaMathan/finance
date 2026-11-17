@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { api, bootstrapSession, setAccessToken, type SessionPayload, type SessionUser } from './api';
+import type { AwaitingApprovalResponse } from './loginApproval';
 
 /**
  * Session state for the whole app.
@@ -30,7 +31,12 @@ interface AuthContextValue {
   status: 'loading' | 'authenticated' | 'anonymous';
   user: SessionUser | null;
   profile: ProfileSummary | null;
-  login: (email: string, password: string) => Promise<void>;
+  /**
+   * Returns normally for borrowers/auditors.
+   * Returns { awaitingApproval: true, ... } for staff (server 202).
+   * Throws ApiError for all other failures.
+   */
+  login: (email: string, password: string) => Promise<void | AwaitingApprovalResponse>;
   register: (input: {
     email: string;
     password: string;
@@ -39,6 +45,8 @@ interface AuthContextValue {
     inviteCode?: string;
     staffId?: string;
   }) => Promise<void>;
+  /** Call this after the approval poll returns 'approved' to establish the session. */
+  applyApprovedSession: (payload: SessionPayload) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -55,7 +63,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await api<{ profile: ProfileSummary }>('/me/profile');
       setProfile(data.profile);
     } catch {
-      // A missing profile should never block the app; the pages show a hint.
       setProfile(null);
     }
   }, []);
@@ -77,9 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setStatus('anonymous');
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [loadProfile]);
 
   const applySession = useCallback(
@@ -93,12 +98,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const login = useCallback(
-    async (email: string, password: string) => {
-      const session = await api<SessionPayload>('/auth/login', {
-        method: 'POST',
-        body: { email, password },
-      });
-      await applySession(session);
+    async (email: string, password: string): Promise<void | AwaitingApprovalResponse> => {
+      // The server returns HTTP 202 for staff with correct credentials.
+      // The api() helper only throws on non-2xx, so we need to detect 202
+      // by checking the response body shape.
+      const raw = await api<
+        | SessionPayload
+        | { status: 'awaiting_approval'; requestId: string; pollToken: string; expiresAt: string }
+      >('/auth/login', { method: 'POST', body: { email, password } });
+
+      if ('status' in raw && raw.status === 'awaiting_approval') {
+        // Staff — return the pending object so LoginPage can show the waiting screen.
+        return raw as AwaitingApprovalResponse;
+      }
+
+      // Borrower / Auditor — normal session.
+      await applySession(raw as SessionPayload);
+    },
+    [applySession],
+  );
+
+  /** Called by the approval-polling screen once the auditor approves. */
+  const applyApprovedSession = useCallback(
+    async (payload: SessionPayload) => {
+      await applySession(payload);
     },
     [applySession],
   );
@@ -130,8 +153,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, profile, login, register, logout, refreshProfile: loadProfile }),
-    [status, user, profile, login, register, logout, loadProfile],
+    () => ({ status, user, profile, login, register, applyApprovedSession, logout, refreshProfile: loadProfile }),
+    [status, user, profile, login, register, applyApprovedSession, logout, loadProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

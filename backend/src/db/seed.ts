@@ -89,8 +89,8 @@ async function upsertPerson(person: SeedPerson, passwordHash: string): Promise<s
     }
 
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO users (email, password_hash, role, full_name)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (email, password_hash, role, full_name, status)
+       VALUES ($1, $2, $3, $4, 'active')
        RETURNING id`,
       [person.email, passwordHash, person.role, person.fullName],
     );

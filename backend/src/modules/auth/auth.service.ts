@@ -11,6 +11,7 @@ import {
   type RefreshContext,
   type RefreshIssue,
 } from './token.service';
+import { createLoginApproval } from './login-approval.service';
 
 /**
  * Authentication service.
@@ -21,6 +22,7 @@ import {
  *  - a single generic message for "unknown email" and "wrong password" so the
  *    endpoint cannot be used to enumerate accounts
  *  - every success and failure is written to the audit chain
+ *  - staff logins require auditor approval before a session is issued
  */
 export interface RegisterInput {
   email: string;
@@ -38,6 +40,14 @@ export interface AuthResult {
   user: PublicUser;
   accessToken: string;
   refresh: RefreshIssue;
+}
+
+/** Returned instead of AuthResult when a staff login needs auditor approval. */
+export interface StaffApprovalPending {
+  awaitingApproval: true;
+  requestId: string;
+  pollToken: string;
+  expiresAt: string; // ISO
 }
 
 export interface PublicUser {
@@ -130,7 +140,7 @@ export async function login(
   emailInput: string,
   password: string,
   context: RefreshContext & { requestId?: string },
-): Promise<AuthResult> {
+): Promise<AuthResult | StaffApprovalPending> {
   const email = normalizeEmail(emailInput);
   const row = await queryOne<{
     id: string;
@@ -186,11 +196,58 @@ export async function login(
     throw unauthorized('Invalid email or password');
   }
 
-  if (row.status !== 'active') {
+  // Staff accounts that are 'pending' or 'suspended' get the same generic
+  // response as an invalid login — never reveal account status to the caller.
+  if (row.role === 'staff' && row.status !== 'active') {
+    await auditFailure(`staff_${row.status}`);
+    throw unauthorized('Invalid email or password');
+  }
+
+  // Non-staff inactive accounts.
+  if (row.role !== 'staff' && row.status !== 'active') {
     await auditFailure('inactive_account');
     throw unauthorized('This account is not active');
   }
 
+  // -------------------------------------------------------------------------
+  // Staff login: correct password + active account → create an approval
+  // request and return a poll token instead of a real session.
+  // -------------------------------------------------------------------------
+  if (row.role === 'staff') {
+    // Reset failed_attempts on a correct password, even though we won't issue
+    // a session yet — the lockout mechanism is about credential stuffing, not
+    // about the approval flow.
+    await query(
+      'UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1',
+      [row.id],
+    );
+
+    await auditFailure('staff_awaiting_approval'); // audit the attempt even when pending
+    // Overwrite the 'failed' action with the real one.
+    await recordAudit({
+      actorUserId: row.id,
+      actorRole: row.role,
+      action: 'auth.login_staff_credentials_ok',
+      entityType: 'user',
+      entityId: row.id,
+      detail: { email, requiresApproval: true },
+      ip: context.ip ?? null,
+      userAgent: context.userAgent ?? null,
+      requestId: context.requestId ?? null,
+    });
+
+    const approval = await createLoginApproval(row.id, context);
+    return {
+      awaitingApproval: true,
+      requestId: approval.requestId,
+      pollToken: approval.pollToken,
+      expiresAt: approval.expiresAt.toISOString(),
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Borrower / Auditor — issue a session immediately (unchanged behaviour).
+  // -------------------------------------------------------------------------
   await query('UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = now() WHERE id = $1', [row.id]);
   await recordAudit({
     actorUserId: row.id,

@@ -18,6 +18,7 @@ import { AuditorDashboard } from './pages/auditor/AuditorDashboard';
 import { AuditLogPage } from './pages/auditor/AuditLogPage';
 import { TimelinePage } from './pages/auditor/TimelinePage';
 import { IntegrityPage } from './pages/auditor/IntegrityPage';
+import { AccessRequestsPage } from './pages/auditor/AccessRequestsPage';
 
 /** Blocks the app until the session is known; redirects anonymous users. */
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -154,6 +155,14 @@ export default function App() {
           element={
             <RequireRole role="auditor">
               <IntegrityPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/auditor/access-requests"
+          element={
+            <RequireRole role="auditor">
+              <AccessRequestsPage />
             </RequireRole>
           }
         />

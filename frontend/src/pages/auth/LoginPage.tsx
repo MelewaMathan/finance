@@ -3,7 +3,9 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { AuthLayout } from '../../components/AppShell';
 import { Alert, Field, Spinner, TextInput } from '../../components/ui';
 import { homeFor, useAuth } from '../../lib/auth';
-import { fieldErrors, messageOf } from '../../lib/errors';
+import { fieldErrors } from '../../lib/errors';
+import { AwaitingApprovalScreen } from './AwaitingApprovalScreen';
+import type { AwaitingApprovalResponse } from '../../lib/loginApproval';
 
 // ---------------------------------------------------------------------------
 // Env-controlled demo panel
@@ -16,10 +18,7 @@ const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD as string | undefined;
 // ---------------------------------------------------------------------------
 type RoleView = 'borrower' | 'staff' | 'auditor';
 
-const ROLE_META: Record<
-  RoleView,
-  { heading: string; tagline: string; demoEmail: string }
-> = {
+const ROLE_META: Record<RoleView, { heading: string; tagline: string; demoEmail: string }> = {
   borrower: {
     heading: 'Sign in',
     tagline: 'Sign in to apply for loans and track your repayments.',
@@ -46,26 +45,19 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
   const buttonRef = useRef<HTMLButtonElement>(null);
   const navigate = useNavigate();
 
-  // Close on outside click
   useEffect(() => {
     if (!open) return;
     function onMouseDown(e: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
     }
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
   }, [open]);
 
-  // Close on Escape
   useEffect(() => {
     if (!open) return;
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
+      if (e.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); }
     }
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
@@ -73,11 +65,7 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
 
   function go(role: RoleView) {
     setOpen(false);
-    if (role === 'borrower') {
-      navigate('/login');
-    } else {
-      navigate(`/login?role=${role}`);
-    }
+    navigate(role === 'borrower' ? '/login' : `/login?role=${role}`);
   }
 
   const items: { role: RoleView; label: string }[] = [
@@ -97,7 +85,6 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
         onClick={() => setOpen((v) => !v)}
         className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/30 bg-white/10 text-white transition-colors hover:bg-white/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/60"
       >
-        {/* Three-line hamburger */}
         <svg viewBox="0 0 20 20" className="h-5 w-5" fill="currentColor" aria-hidden="true">
           <rect x="2" y="4"  width="16" height="2" rx="1" />
           <rect x="2" y="9"  width="16" height="2" rx="1" />
@@ -139,21 +126,12 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
 // ---------------------------------------------------------------------------
 // Demo panel — shows only the account relevant to the current role view
 // ---------------------------------------------------------------------------
-function DemoPanel({
-  role,
-  onUse,
-}: {
-  role: RoleView;
-  onUse: (email: string) => void;
-}) {
+function DemoPanel({ role, onUse }: { role: RoleView; onUse: (email: string) => void }) {
   if (!SHOW_DEMO || !DEMO_PASSWORD) return null;
   const { demoEmail } = ROLE_META[role];
-
   return (
     <div className="mt-4 rounded-2xl border border-slate-200 bg-white/70 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-        Demo account
-      </p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Demo account</p>
       <p className="mt-1 text-xs text-slate-500">
         Password: <code className="font-mono">{DEMO_PASSWORD}</code>
       </p>
@@ -178,14 +156,10 @@ function DemoPanel({
 // ---------------------------------------------------------------------------
 export function LoginPage() {
   const { login, status, user } = useAuth();
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Derive current view from ?role= param; unknown values fall back to borrower.
   const rawRole = searchParams.get('role') ?? 'borrower';
-  const roleView: RoleView =
-    rawRole === 'staff' || rawRole === 'auditor' ? rawRole : 'borrower';
-
+  const roleView: RoleView = rawRole === 'staff' || rawRole === 'auditor' ? rawRole : 'borrower';
   const meta = ROLE_META[roleView];
 
   const [email, setEmail] = useState('');
@@ -193,16 +167,16 @@ export function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<AwaitingApprovalResponse | null>(null);
 
-  // Reset the form whenever the user switches between role views.
   useEffect(() => {
     setEmail('');
     setPassword('');
     setError(null);
     setErrors({});
+    setPending(null);
   }, [roleView]);
 
-  // Already authenticated — redirect to their actual dashboard.
   if (status === 'authenticated' && user) {
     return <Navigate to={homeFor(user.role)} replace />;
   }
@@ -213,13 +187,13 @@ export function LoginPage() {
     setError(null);
     setErrors({});
     try {
-      await login(email, password);
-      // login() updates the auth context. The Navigate above will fire on
-      // re-render and send the user to homeFor(user.role) — their REAL role,
-      // regardless of which view (borrower / staff / auditor) they used.
+      const result = await login(email, password);
+      if (result && 'awaitingApproval' in result) {
+        setPending(result as AwaitingApprovalResponse);
+        return;
+      }
+      // Borrower/Auditor — Navigate above fires on re-render.
     } catch (caught) {
-      // Always return a generic message so the UI cannot be used to identify
-      // which email addresses belong to staff or auditor accounts.
       setError('Invalid email or password');
       setErrors(fieldErrors(caught));
     } finally {
@@ -235,73 +209,75 @@ export function LoginPage() {
   return (
     <AuthLayout headerRight={<RoleMenu currentRole={roleView} />}>
       <div className="w-full max-w-md">
-        <div className="card p-6 sm:p-8">
-          <h1 className="text-xl font-semibold text-slate-900">{meta.heading}</h1>
-          <p className="mt-1 text-sm text-slate-500">{meta.tagline}</p>
+        {pending ? (
+          <AwaitingApprovalScreen
+            pending={pending}
+            onCancel={() => { setPending(null); setEmail(''); setPassword(''); }}
+          />
+        ) : (
+          <>
+            <div className="card p-6 sm:p-8">
+              <h1 className="text-xl font-semibold text-slate-900">{meta.heading}</h1>
+              <p className="mt-1 text-sm text-slate-500">{meta.tagline}</p>
 
-          <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
-            {error ? <Alert>{error}</Alert> : null}
+              <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
+                {error ? <Alert>{error}</Alert> : null}
 
-            <Field label="Email address" htmlFor="email" error={errors.email}>
-              <TextInput
-                id="email"
-                type="email"
-                autoComplete="username"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-              />
-            </Field>
+                <Field label="Email address" htmlFor="email" error={errors.email}>
+                  <TextInput
+                    id="email"
+                    type="email"
+                    autoComplete="username"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
+                </Field>
 
-            <Field label="Password" htmlFor="password" error={errors.password}>
-              <TextInput
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••"
-              />
-            </Field>
+                <Field label="Password" htmlFor="password" error={errors.password}>
+                  <TextInput
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••"
+                  />
+                </Field>
 
-            <button type="submit" className="btn-primary w-full" disabled={busy}>
-              {busy ? <Spinner label="Signing in" /> : 'Sign in'}
-            </button>
-          </form>
+                <button type="submit" className="btn-primary w-full" disabled={busy}>
+                  {busy ? <Spinner label="Signing in" /> : 'Sign in'}
+                </button>
+              </form>
 
-          {/* Bottom link — varies by view */}
-          {roleView === 'borrower' && (
-            <p className="mt-4 text-center text-sm text-slate-500">
-              New borrower?{' '}
-              <Link
-                to="/register"
-                className="font-semibold text-brand-700 hover:underline"
-              >
-                Create an account
-              </Link>
-            </p>
-          )}
-          {roleView === 'staff' && (
-            <p className="mt-4 text-center text-sm text-slate-500">
-              Have an invite code?{' '}
-              <Link
-                to="/register?role=staff"
-                className="font-semibold text-brand-700 hover:underline"
-              >
-                Register as staff
-              </Link>
-            </p>
-          )}
-          {roleView === 'auditor' && (
-            <p className="mt-4 text-center text-sm text-slate-500 italic">
-              Auditor accounts are provisioned by an administrator.
-            </p>
-          )}
-        </div>
+              {roleView === 'borrower' && (
+                <p className="mt-4 text-center text-sm text-slate-500">
+                  New borrower?{' '}
+                  <Link to="/register" className="font-semibold text-brand-700 hover:underline">
+                    Create an account
+                  </Link>
+                </p>
+              )}
+              {roleView === 'staff' && (
+                <p className="mt-4 text-center text-sm text-slate-500">
+                  Have an invite code?{' '}
+                  <Link to="/register?role=staff" className="font-semibold text-brand-700 hover:underline">
+                    Register as staff
+                  </Link>
+                </p>
+              )}
+              {roleView === 'auditor' && (
+                <p className="mt-4 text-center text-sm text-slate-500 italic">
+                  Auditor accounts are provisioned by an administrator.
+                </p>
+              )}
+            </div>
 
-        <DemoPanel role={roleView} onUse={fillDemo} />
+            <DemoPanel role={roleView} onUse={fillDemo} />
+          </>
+        )}
       </div>
     </AuthLayout>
   );

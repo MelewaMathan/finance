@@ -47,8 +47,11 @@ export async function register(
 
 export async function login(email: string, password = PASSWORD): Promise<Session> {
   const response = await request(app).post('/api/v1/auth/login').send({ email, password });
-  if (response.status !== 200) {
+  if (response.status !== 200 && response.status !== 202) {
     throw new Error(`login failed: ${response.status} ${JSON.stringify(response.body)}`);
+  }
+  if (response.status === 202) {
+    throw new Error(`login returned 202 awaiting_approval — use the full approval flow for staff`);
   }
   return { token: response.body.accessToken, cookie: refreshCookie(response), userId: response.body.user.id };
 }

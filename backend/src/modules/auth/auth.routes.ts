@@ -3,13 +3,21 @@ import { z } from 'zod';
 import { queryOne } from '../../db/pool';
 import { clearRefreshCookie, setRefreshCookie } from '../../lib/cookies';
 import { unauthorized } from '../../lib/errors';
-import { requireAuth } from '../../middleware/auth';
+import { requireAuth, requireRole } from '../../middleware/auth';
 import { authLimiter } from '../../middleware/rateLimit';
 import { clientIp, userAgent } from '../../middleware/requestContext';
 import { validate } from '../../middleware/validate';
 import { changePassword, login, logout, register } from './auth.service';
 import { rotateRefreshToken, signAccessToken } from './token.service';
 import { getProfileSummary } from '../users/users.service';
+import {
+  decideLoginApproval,
+  listApprovalHistory,
+  listPendingApprovals,
+  listStaffAccounts,
+  pollLoginApproval,
+  setStaffAccountStatus,
+} from './login-approval.service';
 import type { Role } from '../../types/express';
 
 /**
@@ -37,9 +45,7 @@ const registerSchema = z.object({
   // Borrowers self-register freely. Staff registration requires a valid invite
   // code (checked in auth.service.ts). Auditor accounts cannot be self-registered.
   role: z.enum(['borrower', 'staff']),
-  // Required when role === 'staff'; the backend validates it against STAFF_INVITE_CODE.
   inviteCode: z.string().max(128).optional(),
-  // Optional staff identifier.
   staffId: z.string().trim().max(80).optional(),
 });
 
@@ -51,6 +57,19 @@ const loginSchema = z.object({
 const changePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(128),
   newPassword: passwordSchema,
+});
+
+const pollTokenSchema = z.object({
+  pollToken: z.string().min(16).max(128),
+});
+
+const decideSchema = z.object({
+  decision: z.enum(['approve', 'deny']),
+  reason: z.string().trim().max(500).optional(),
+});
+
+const staffStatusSchema = z.object({
+  action: z.enum(['approve-account', 'suspend', 'reactivate']),
 });
 
 export const authRouter = Router();
@@ -73,6 +92,18 @@ authRouter.post('/login', authLimiter, validate(loginSchema), async (req, res) =
     userAgent: userAgent(req),
     requestId: req.requestId,
   });
+
+  // Staff login — return the approval pending response without a session.
+  if ('awaitingApproval' in result) {
+    res.status(202).json({
+      status: 'awaiting_approval',
+      requestId: result.requestId,
+      pollToken: result.pollToken,
+      expiresAt: result.expiresAt,
+    });
+    return;
+  }
+
   setRefreshCookie(res, result.refresh.token, result.refresh.expiresAt);
   res.json({ user: result.user, accessToken: result.accessToken });
 });
@@ -119,7 +150,107 @@ authRouter.patch('/password', requireAuth, validate(changePasswordSchema), async
     userAgent: userAgent(req),
     requestId: req.requestId,
   });
-  // All refresh tokens were revoked, so the client must log in again.
   clearRefreshCookie(res);
   res.json({ message: 'Password updated. Please sign in again.' });
 });
+
+// ---------------------------------------------------------------------------
+// Staff login polling — no auth token required (staff doesn't have one yet).
+// ---------------------------------------------------------------------------
+authRouter.get(
+  '/login-requests/:id/status',
+  authLimiter,
+  validate(pollTokenSchema, 'query'),
+  async (req, res) => {
+    const { pollToken } = req.query as z.infer<typeof pollTokenSchema>;
+    const result = await pollLoginApproval(pollToken, {
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+      requestId: req.requestId,
+    });
+
+    if (result.status === 'approved') {
+      setRefreshCookie(res, result.refresh.token, result.refresh.expiresAt);
+      res.json({
+        status: 'approved',
+        user: result.user,
+        accessToken: result.accessToken,
+      });
+      return;
+    }
+
+    res.json(result);
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Auditor-only: login approval management
+// ---------------------------------------------------------------------------
+authRouter.get('/login-requests', requireAuth, requireRole('auditor'), async (req, res) => {
+  const rows = await listPendingApprovals(req.user!.id);
+  res.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      staffUserId: r.staff_user_id,
+      staffName: r.staff_full_name,
+      staffEmail: r.staff_email,
+      requestedAt: r.requested_at,
+      expiresAt: r.expires_at,
+      ipAddress: r.ip_address,
+      userAgent: r.user_agent,
+    })),
+  });
+});
+
+authRouter.get('/login-requests/history', requireAuth, requireRole('auditor'), async (req, res) => {
+  const rows = await listApprovalHistory(req.user!.id);
+  res.json({ items: rows });
+});
+
+authRouter.post(
+  '/login-requests/:id/decide',
+  requireAuth,
+  requireRole('auditor'),
+  validate(decideSchema),
+  async (req, res) => {
+    const body = req.body as z.infer<typeof decideSchema>;
+    await decideLoginApproval(req.user!.id, req.params.id as string, body, {
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+      requestId: req.requestId,
+    });
+    res.json({ ok: true });
+  },
+);
+
+authRouter.get('/staff-accounts', requireAuth, requireRole('auditor'), async (_req, res) => {
+  const rows = await listStaffAccounts();
+  res.json({
+    items: rows.map((r) => ({
+      id: r.id,
+      email: r.email,
+      fullName: r.full_name,
+      status: r.status,
+      createdAt: r.created_at,
+      lastLoginAt: r.last_login_at,
+    })),
+  });
+});
+
+authRouter.post(
+  '/staff-accounts/:id/status',
+  requireAuth,
+  requireRole('auditor'),
+  validate(staffStatusSchema),
+  async (req, res) => {
+    const { action } = req.body as z.infer<typeof staffStatusSchema>;
+    const newStatus: 'active' | 'pending' | 'suspended' =
+      action === 'approve-account' ? 'active' : action === 'suspend' ? 'suspended' : 'active';
+    await setStaffAccountStatus(req.user!.id, req.params.id as string, newStatus, {
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+      requestId: req.requestId,
+    });
+    res.json({ ok: true });
+  },
+);
