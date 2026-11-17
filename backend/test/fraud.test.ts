@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { __setAnomalyScorer, type AnomalyResponse } from '../src/modules/fraud/anomaly.client';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M6 -- fraud detection, holds and the review queue.
@@ -192,7 +192,7 @@ describe('fraud detection and review', () => {
       "SELECT status, hold_reason FROM transactions WHERE loan_id = $1 AND type = 'repayment'",
       [loan.id],
     );
-    // Kept, not deleted: an auditor must see that a claim was made and refused.
+    // Kept, not deleted: an admin must see that a claim was made and refused.
     expect(txn[0].status).toBe('rejected');
     expect(txn[0].hold_reason).toContain('Receipt does not exist');
 
@@ -249,7 +249,7 @@ describe('fraud detection and review', () => {
     expect(retried.body.loan.status).toBe('disbursed');
   });
 
-  it('scopes the queue to the lender, shows everything to an auditor and nothing to a borrower', async () => {
+  it('scopes the queue to the lender, shows everything to an admin and nothing to a borrower', async () => {
     const borrowerSession = await borrower('grace@fraud.test');
     const lenderSession = await lender();
     const loan = await liveLoan(borrowerSession, lenderSession);
@@ -276,17 +276,17 @@ describe('fraud detection and review', () => {
       .send({ resolution: 'cleared', note: 'Not mine to judge.' });
     expect(outsiderResolve.status).toBe(404);
 
-    const auditor = await createAuditor('auditor@fraud.test');
-    const asAuditor = await request(app).get('/api/v1/fraud/flags').set(...authHeader(auditor));
-    expect(asAuditor.status).toBe(200);
-    expect(asAuditor.body.count).toBe(1);
+    const admin = await createAdmin('admin@fraud.test');
+    const asAdmin = await request(app).get('/api/v1/fraud/flags').set(...authHeader(admin));
+    expect(asAdmin.status).toBe(200);
+    expect(asAdmin.body.count).toBe(1);
 
-    // An auditor reviews the reviewer; they must not be able to clear findings.
-    const auditorResolve = await request(app)
+    // An admin reviews the reviewer; they must not be able to clear findings.
+    const adminResolve = await request(app)
       .post(`/api/v1/fraud/flags/${own.body.flags[0].id}/resolve`)
-      .set(...authHeader(auditor))
-      .send({ resolution: 'cleared', note: 'Auditors do not decide.' });
-    expect(auditorResolve.status).toBe(403);
+      .set(...authHeader(admin))
+      .send({ resolution: 'cleared', note: 'Admins do not decide.' });
+    expect(adminResolve.status).toBe(403);
 
     const asBorrower = await request(app).get('/api/v1/fraud/flags').set(...authHeader(borrowerSession));
     expect(asBorrower.status).toBe(403);

@@ -4,8 +4,8 @@ import { downloadFile } from './loans';
 /**
  * Forensic dashboard client (M7).
  *
- * The auditor reads, never writes business data. The two writes here -- an
- * integrity run and an export -- are recorded as the auditor's own actions,
+ * The admin reads, never writes business data. The two writes here -- an
+ * integrity run and an export -- are recorded as the admin's own actions,
  * which is why the server returns them instead of hiding them.
  */
 export interface AuditRow {

@@ -16,7 +16,7 @@ const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD as string | undefined;
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
-type RoleView = 'borrower' | 'staff' | 'auditor';
+type RoleView = 'borrower' | 'staff' | 'admin';
 
 const ROLE_META: Record<RoleView, { heading: string; tagline: string; demoEmail: string }> = {
   borrower: {
@@ -29,10 +29,10 @@ const ROLE_META: Record<RoleView, { heading: string; tagline: string; demoEmail:
     tagline: 'Sign in to review applications and manage repayments.',
     demoEmail: 'staff@smf.demo',
   },
-  auditor: {
-    heading: 'Auditor sign in',
+  admin: {
+    heading: 'Admin sign in',
     tagline: 'Sign in for read-only forensic access to the audit trail.',
-    demoEmail: 'auditor@smf.demo',
+    demoEmail: 'admin@smf.demo',
   },
 };
 
@@ -71,7 +71,7 @@ export function RoleMenu({ currentRole }: { currentRole: RoleView }) {
   const items: { role: RoleView; label: string }[] = [
     { role: 'borrower', label: 'Borrower sign in' },
     { role: 'staff', label: 'Staff sign in' },
-    { role: 'auditor', label: 'Auditor sign in' },
+    { role: 'admin', label: 'Admin sign in' },
   ];
 
   return (
@@ -159,7 +159,9 @@ export function LoginPage() {
   const [searchParams] = useSearchParams();
 
   const rawRole = searchParams.get('role') ?? 'borrower';
-  const roleView: RoleView = rawRole === 'staff' || rawRole === 'auditor' ? rawRole : 'borrower';
+  // Support legacy ?role=auditor links by silently upgrading to admin.
+  const normalised = rawRole === 'auditor' ? 'admin' : rawRole;
+  const roleView: RoleView = normalised === 'staff' || normalised === 'admin' ? normalised : 'borrower';
   const meta = ROLE_META[roleView];
 
   const [email, setEmail] = useState('');
@@ -192,7 +194,7 @@ export function LoginPage() {
         setPending(result as AwaitingApprovalResponse);
         return;
       }
-      // Borrower/Auditor — Navigate above fires on re-render.
+      // Borrower/Admin — Navigate above fires on re-render.
     } catch (caught) {
       setError('Invalid email or password');
       setErrors(fieldErrors(caught));
@@ -268,9 +270,9 @@ export function LoginPage() {
                   </Link>
                 </p>
               )}
-              {roleView === 'auditor' && (
+              {roleView === 'admin' && (
                 <p className="mt-4 text-center text-sm text-slate-500 italic">
-                  Auditor accounts are provisioned by an administrator.
+                  Admin accounts are provisioned by an administrator.
                 </p>
               )}
             </div>

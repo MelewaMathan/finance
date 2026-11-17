@@ -57,19 +57,22 @@ export async function login(email: string, password = PASSWORD): Promise<Session
 }
 
 /**
- * Creates an auditor directly in the database: the public API deliberately
- * cannot mint auditor accounts.
+ * Creates an admin directly in the database: the public API deliberately
+ * cannot mint admin accounts.
  */
-export async function createAuditor(email = 'auditor@test.local'): Promise<Session> {
+export async function createAdmin(email = 'admin@test.local'): Promise<Session> {
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
   const row = await queryOne<{ id: string }>(
     `INSERT INTO users (email, password_hash, role, full_name)
-     VALUES ($1, $2, 'auditor', 'Forensic Auditor')
+     VALUES ($1, $2, 'admin', 'Forensic Admin')
      RETURNING id`,
     [email, passwordHash],
   );
   return login(email);
 }
+
+/** @deprecated Use createAdmin instead. */
+export const createAuditor = createAdmin;
 
 export function authHeader(session: Session): [string, string] {
   return ['Authorization', `Bearer ${session.token}`];

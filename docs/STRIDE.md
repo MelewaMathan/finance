@@ -42,7 +42,7 @@ Terminology used below:
 | E6 Audit log and evidence | B2, B7 |
 | E7 Ledger client and contract | B5 |
 | E8 Scoring and anomaly services | B4 |
-| E9 Auditor views and exports | B6 |
+| E9 Admin views and exports | B6 |
 | E10 Build, configuration, operations | — |
 
 ## 3. Threats by element
@@ -66,7 +66,7 @@ mature deployment would add.
 | A10 | R | Denying that a login happened | Every success, failure, lockout and rotation is written to the audit chain with IP and user agent | IP is spoofable behind a proxy that does not strip `X-Forwarded-For` (`trust proxy` is 1 hop) |
 | A11 | I | Password recovered from logs | Passwords are never logged; audit details carry the email and a reason, never the secret | — |
 | A12 | D | Login endpoint flooded | `authLimiter`; global limiter 600 requests / 15 min | Limits are in-process; a second API replica doubles every bucket |
-| A13 | E | User claims a role they were not granted | `register` accepts `borrower` freely and `staff` only with a valid invite code; there is no self-service path to `auditor` (database-provisioned only); the role in the token is ignored in favour of the database | Any DBA can create an auditor — that is the same trust as the database itself |
+| A13 | E | User claims a role they were not granted | `register` accepts `borrower` freely and `staff` only with a valid invite code; there is no self-service path to `admin` (database-provisioned only); the role in the token is ignored in favour of the database | Any DBA can create an admin — that is the same trust as the database itself |
 
 ### E2 · Authorisation on every request
 
@@ -74,7 +74,7 @@ mature deployment would add.
 | --- | --- | --- | --- | --- |
 | B1 | E | Borrower reads another borrower's loan | `loadVisibleLoan` scopes by `borrower_id`/`lender_id`; auditors see all; anything else is `404`, not `403` | — |
 | B2 | E | Staff approves or disburses on another staff member's book | `requireRole('staff')` at the route **and** ownership re-check in the service; tested in `loans.test.ts` ("scopes the queue to each book") | — |
-| B3 | E | Auditor modifies money | No write route accepts `auditor`; `denyAuditorWrites` is a redundant belt on the one route a shared middleware could have let through | An auditor can mark **their own** alert as read (`alerts.user_id = actor.id`) — no money, no evidence is touched |
+| B3 | E | Admin modifies money | No write route accepts `admin`; `denyAuditorWrites` is a redundant belt on the one route a shared middleware could have let through | An admin can mark **their own** alert as read (`alerts.user_id = actor.id`) — no money, no evidence is touched |
 | B4 | E | Borrower marks their own loan as verified / approved | Decision endpoints are staff-only; identity verification is staff-only; the service also re-checks loan status transitions | — |
 | B5 | I | Existence oracle via error codes | Hidden resources answer `404`; `403` is reserved for "you exist but may not do this" | Endpoint shape (e.g. `409` on a second decision) can still reveal that a resource exists to someone who can already see it |
 | B6 | E | Role check bypassed by a new route | Roles are declared per route, so a forgotten gate is a code-review failure rather than a config gap. `rbac.test.ts` asserts 401/403/404 behaviour per role | No automated "every mutating route has a role" test |
@@ -120,11 +120,11 @@ mature deployment would add.
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
 | F1 | T | Editing an audit row | `BEFORE UPDATE`/`BEFORE DELETE`/`BEFORE TRUNCATE` triggers raise an exception; the hash chain would break anyway | A superuser can `ALTER TABLE audit_log DISABLE TRIGGER USER` — and can recompute the chain |
-| F2 | T | Deleting the tail of the log | `prev_hash` chaining; `verifyAuditChain` reports the first mismatch; the auditor UI shows the verdict and the row | Nothing at rest prevents the deletion, only detection |
+| F2 | T | Deleting the tail of the log | `prev_hash` chaining; `verifyAuditChain` reports the first mismatch; the admin UI shows the verdict and the row | Nothing at rest prevents the deletion, only detection |
 | F3 | T | Rewriting the whole chain after tampering | Chain heads can be anchored on the public ledger; `anchorAuditRoot` is **monotonic**, so an older root cannot be re-anchored | Anchoring is manual (a lender-triggered endpoint), so tampering between the last anchor and detection is invisible until the next anchor |
 | F4 | R | Repudiating an action | Actor id + role + IP + user agent + request id per row; rows are never updated, so the original claim survives | A shared login is a shared actor |
-| F5 | I | Auditor reads PII from the log | `detail` holds ids and hashes, not values; actor names are resolved at read time | — |
-| F6 | I | Quiet mass exfiltration of the log | Exports are auditor-only and each one writes `audit.exported` with a SHA-256 of the file | No alerting on export volume |
+| F5 | I | Admin reads PII from the log | `detail` holds ids and hashes, not values; actor names are resolved at read time | — |
+| F6 | I | Quiet mass exfiltration of the log | Exports are admin-only and each one writes `audit.exported` with a SHA-256 of the file | No alerting on export volume |
 | F7 | T | Export claims "verified" when it was not | The CSV/PDF embed the chain verdict computed **at export time**, and the file's own SHA-256 is returned in `X-Document-SHA256` | The file is a snapshot; its claim is only as good as the check that produced it |
 | F8 | D | Log growth | Indexed by `created_at` and GIN on `detail` | `audit_log` grows without bound by design. Retention is a hosting cost decision, not a feature |
 
@@ -152,11 +152,11 @@ mature deployment would add.
 | H5 | E | A model decides a loan | The score is advisory; a human makes the decision; the loan row records who | A lender who rubber-stamps the score is a process failure the code cannot see |
 | H6 | T | Adversarial evasion of the anomaly model | Rules R1–R5 are deterministic and independent of the model | The synthetic training set makes evasion trivially easy. Stated as a limitation, not defended |
 
-### E9 · Auditor views and exports
+### E9 · Admin views and exports
 
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
-| I1 | I | Auditor exports the whole log | Auditor-only routes; every search, timeline and integrity run is itself audited | An auditor is trusted by definition; the log of their reads is the control, not prevention |
+| I1 | I | Admin exports the whole log | Admin-only routes; every search, timeline and integrity run is itself audited | An admin is trusted by definition; the log of their reads is the control, not prevention |
 | I2 | R | Integrity check reports a false "all good" | A tampered result is a `200` **finding** with `result: tampered` and the mismatching row, not an error — so a failure cannot be mistaken for a transport problem | The check only sees what the database shows it |
 | I3 | R | Check reports false alarms | An unanchored payment is reported as `anchored_unchecked`/`unanchored`, never as tampering | A chain outage will make every recent payment look unproven, correctly |
 | I4 | D | Expensive export or wide search | Bounded `pageSize`, bounded date range, bounded history | No per-user quota on exports |
@@ -179,7 +179,7 @@ Every claim above that matters is exercised by a test. Counts are for the curren
 | Control | Where it is proved |
 | --- | --- |
 | bcrypt login, lockout, generic 401, rotation, reuse detection, logout revocation | `backend/test/auth.test.ts` (9) |
-| Role gates, cross-book 404s, auditor read-only, suspended account | `backend/test/rbac.test.ts` (6) |
+| Role gates, cross-book 404s, admin read-only, suspended account | `backend/test/rbac.test.ts` (6) |
 | AES-GCM round trip, tamper rejection, blind index normalisation, masking | `backend/test/encryption.test.ts` (5) |
 | Chain append, hash linkage, trigger blocks UPDATE/DELETE, `verifyAuditChain` | `backend/test/audit.test.ts` (4) |
 | Schedule maths, agreement hash, **download refuses a swapped file**, disbursement rules | `backend/test/loans.test.ts` (11) |
@@ -187,7 +187,7 @@ Every claim above that matters is exercised by a test. Counts are for the curren
 | Advisory score, labelled fallback, ML payload shape | `backend/test/scoring.test.ts` (5) |
 | Proof states (`verified` / `unanchored` / `broken`), wrong-contract detection | `backend/test/ledger.test.ts` (7) |
 | Rule flags, ML layer, hold release/reject, review queue, alert scoping | `backend/test/fraud.test.ts` (8) |
-| Auditor-only search, timeline, tamper detection, exports audited | `backend/test/forensics.test.ts` (7) |
+| Admin-only search, timeline, tamper detection, exports audited | `backend/test/forensics.test.ts` (7) |
 | Recorder allow-list, replay rejection, immutability, monotonic anchoring | `contracts/test/LoanLedger.test.js` (9) |
 
 Reproduce:

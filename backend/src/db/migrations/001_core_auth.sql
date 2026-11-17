@@ -2,7 +2,7 @@
 -- 001_core_auth.sql -- identity, roles, encrypted borrower profiles, sessions
 -- ============================================================================
 
-CREATE TYPE user_role AS ENUM ('borrower', 'staff', 'auditor');
+CREATE TYPE user_role AS ENUM ('borrower', 'staff', 'admin');
 CREATE TYPE user_status AS ENUM ('active', 'pending', 'suspended', 'closed');
 
 -- Reusable updated_at trigger.

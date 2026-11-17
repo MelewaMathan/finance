@@ -9,7 +9,7 @@ import { auditRequest, verifyAuditChain, type ChainVerification } from './audit.
 /**
  * Forensic reads (M7).
  *
- * The auditor's dashboard is built from three questions, and they are answered
+ * The admin's forensic dashboard is built from three questions, and they are answered
  * by three different mechanisms -- mixing them up would be the classic way to
  * claim more assurance than actually exists:
  *
@@ -19,7 +19,7 @@ import { auditRequest, verifyAuditChain, type ChainVerification } from './audit.
  *
  * Nothing here mutates business data. The only writes are the audit row for
  * the read itself and the record of an integrity run, both of which are the
- * auditor's own footprint.
+ * admin's own footprint.
  */
 
 export interface AuditFilters {
@@ -94,7 +94,7 @@ function toRow(row: AuditDbRow): AuditRowView {
 }
 
 function assertAuditor(actor: Actor): void {
-  if (actor.role !== 'auditor') throw forbidden('Only a forensic auditor may use the forensic views');
+  if (actor.role !== 'admin') throw forbidden('Only a forensic admin may use the forensic views');
 }
 
 /** Builds the shared WHERE clause so search, CSV and PDF cannot disagree. */

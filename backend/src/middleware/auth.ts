@@ -6,7 +6,7 @@ import type { Role } from '../types/express';
 
 const accessPayload = z.object({
   sub: z.string().uuid(),
-  role: z.enum(['borrower', 'staff', 'auditor']),
+  role: z.enum(['borrower', 'staff', 'admin']),
   typ: z.literal('access'),
 });
 
@@ -56,12 +56,12 @@ export function requireRole(...roles: Role[]) {
 }
 
 /**
- * Auditors are strictly read-only. Applied to every state-changing route so
+ * Admins are strictly read-only. Applied to every state-changing route so
  * the guarantee is enforced by middleware, not by remembering to check.
  */
 export function denyAuditorWrites(req: Request, _res: Response, next: NextFunction): void {
-  if (req.user?.role === 'auditor') {
-    next(forbidden('Forensic auditors have read-only access'));
+  if (req.user?.role === 'admin') {
+    next(forbidden('Forensic admins have read-only access'));
     return;
   }
   next();

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M7 -- forensic dashboard.
  *
- * Three claims are tested here, one per page of the auditor's dashboard:
+ * Three claims are tested here, one per page of the admin's dashboard:
  * the log answers "what happened" and can be searched; the timeline puts one
  * loan's events in order; and an integrity run detects an edit made straight
  * in the database, both in the audit chain and in a payment row.
@@ -73,10 +73,10 @@ describe('forensic dashboard', () => {
     return loan;
   }
 
-  it('keeps every forensic surface auditor-only', async () => {
+  it('keeps every forensic surface admin-only', async () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
-    const auditor = await createAuditor('auditor@forensics.test');
+    const admin = await createAdmin('admin@forensics.test');
 
     const anonymous = await request(app).get('/api/v1/audit/logs');
     expect(anonymous.status).toBe(401);
@@ -96,7 +96,7 @@ describe('forensic dashboard', () => {
     const csvAsBorrower = await request(app).get('/api/v1/audit/export.csv').set(...authHeader(borrower));
     expect(csvAsBorrower.status).toBe(403);
 
-    const asAuditor = await request(app).get('/api/v1/audit/logs').set(...authHeader(auditor));
+    const asAuditor = await request(app).get('/api/v1/audit/logs').set(...authHeader(admin));
     expect(asAuditor.status).toBe(200);
   });
 
@@ -104,24 +104,24 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     const loan = await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
     const byAction = await request(app)
       .get('/api/v1/audit/logs?action=loan.disbursed')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(byAction.status).toBe(200);
     expect(byAction.body.total).toBeGreaterThanOrEqual(1);
     expect(byAction.body.items.every((row: { action: string }) => row.action === 'loan.disbursed')).toBe(true);
 
     // Newest first: the array is ordered by descending seq.
-    const all = await request(app).get('/api/v1/audit/logs?pageSize=100').set(...authHeader(auditor));
+    const all = await request(app).get('/api/v1/audit/logs?pageSize=100').set(...authHeader(admin));
     expect(all.status).toBe(200);
     const seqs = all.body.items.map((row: { seq: number }) => row.seq);
     expect(seqs).toEqual([...seqs].sort((a: number, b: number) => b - a));
 
     const byEntity = await request(app)
       .get(`/api/v1/audit/logs?entityId=${loan.id}`)
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(byEntity.status).toBe(200);
     expect(byEntity.body.items.length).toBeGreaterThanOrEqual(4);
     expect(
@@ -130,20 +130,20 @@ describe('forensic dashboard', () => {
 
     const byActor = await request(app)
       .get(`/api/v1/audit/logs?actorId=${borrower.userId}`)
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(byActor.status).toBe(200);
     expect(byActor.body.items.every((row: { actorRole: string }) => row.actorRole === 'borrower')).toBe(true);
 
     const freeText = await request(app)
       .get('/api/v1/audit/logs?q=disburs')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(freeText.status).toBe(200);
     expect(freeText.body.total).toBeGreaterThanOrEqual(1);
 
     // A LIKE wildcard typed by a human is literal text, not a match-all.
     const literalPercent = await request(app)
       .get('/api/v1/audit/logs?q=%25')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(literalPercent.status).toBe(200);
     expect(literalPercent.body.total).toBe(0);
   });
@@ -152,9 +152,9 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
-    const actions = await request(app).get('/api/v1/audit/actions').set(...authHeader(auditor));
+    const actions = await request(app).get('/api/v1/audit/actions').set(...authHeader(admin));
     expect(actions.status).toBe(200);
     const names = actions.body.actions.map((row: { action: string }) => row.action);
     expect(names).toContain('loan.disbursed');
@@ -163,18 +163,18 @@ describe('forensic dashboard', () => {
     const today = new Date().toISOString().slice(0, 10);
     const todayOnly = await request(app)
       .get(`/api/v1/audit/logs?from=${today}&to=${today}`)
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(todayOnly.status).toBe(200);
     expect(todayOnly.body.total).toBeGreaterThan(0);
 
     const backwards = await request(app)
       .get('/api/v1/audit/logs?from=2026-11-12&to=2026-11-01')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(backwards.status).toBe(400);
 
     const badDate = await request(app)
       .get('/api/v1/audit/logs?from=yesterday')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(badDate.status).toBe(400);
   });
 
@@ -182,11 +182,11 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     const loan = await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
     const response = await request(app)
       .get(`/api/v1/audit/timeline?loanId=${loan.id}`)
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(response.status).toBe(200);
     expect(response.body.loan.id).toBe(loan.id);
 
@@ -207,16 +207,16 @@ describe('forensic dashboard', () => {
     // A dispute file quotes the reference, so the timeline accepts that too.
     const byRef = await request(app)
       .get(`/api/v1/audit/timeline?ref=${encodeURIComponent(loan.ref)}`)
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(byRef.status).toBe(200);
     expect(byRef.body.loan.id).toBe(loan.id);
 
     const unknown = await request(app)
       .get('/api/v1/audit/timeline?loanId=11111111-1111-4111-8111-111111111111')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(unknown.status).toBe(404);
 
-    const malformed = await request(app).get('/api/v1/audit/timeline?loanId=1').set(...authHeader(auditor));
+    const malformed = await request(app).get('/api/v1/audit/timeline?loanId=1').set(...authHeader(admin));
     expect(malformed.status).toBe(400);
   });
 
@@ -224,11 +224,11 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
     const clean = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'audit_chain' });
     expect(clean.status).toBe(200);
     expect(clean.body.check.result).toBe('ok');
@@ -243,7 +243,7 @@ describe('forensic dashboard', () => {
 
     const tampered = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'audit_chain' });
     expect(tampered.status).toBe(200);
     expect(tampered.body.check.result).toBe('tampered');
@@ -251,11 +251,11 @@ describe('forensic dashboard', () => {
     const problems = tampered.body.check.detail.chain.mismatches as Array<{ reason: string }>;
     expect(problems.some((problem) => problem.reason === 'hash_mismatch')).toBe(true);
 
-    const history = await request(app).get('/api/v1/integrity/checks').set(...authHeader(auditor));
+    const history = await request(app).get('/api/v1/integrity/checks').set(...authHeader(admin));
     expect(history.status).toBe(200);
     expect(history.body.checks[0].result).toBe('tampered');
     expect(history.body.checks.some((row: { result: string }) => row.result === 'ok')).toBe(true);
-    expect(history.body.checks[0].runBy).toBe('Forensic Auditor');
+    expect(history.body.checks[0].runBy).toBe('Forensic Admin');
 
     const audited = await query<{ count: number }>(
       "SELECT count(*)::int AS count FROM audit_log WHERE action = 'integrity.check_run'",
@@ -267,11 +267,11 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     const loan = await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
     const clean = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'loan', targetId: loan.id });
     expect(clean.status).toBe(200);
     expect(clean.body.check.result).toBe('ok');
@@ -281,7 +281,7 @@ describe('forensic dashboard', () => {
     // The same check by reference, for a dispute file that quotes the ref.
     const byRef = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'loan', ref: loan.ref });
     expect(byRef.status).toBe(200);
     expect(byRef.body.check.result).toBe('ok');
@@ -292,7 +292,7 @@ describe('forensic dashboard', () => {
 
     const tampered = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'loan', targetId: loan.id });
     expect(tampered.status).toBe(200);
     expect(tampered.body.check.result).toBe('tampered');
@@ -300,13 +300,13 @@ describe('forensic dashboard', () => {
 
     const missingTarget = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'loan' });
     expect(missingTarget.status).toBe(400);
 
     const unknownLoan = await request(app)
       .post('/api/v1/integrity/check')
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ scope: 'loan', targetId: '11111111-1111-4111-8111-111111111111' });
     expect(unknownLoan.status).toBe(404);
   });
@@ -315,11 +315,11 @@ describe('forensic dashboard', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     await activity(borrower, lenderSession);
-    const auditor = await createAuditor();
+    const admin = await createAdmin();
 
     const csv = await request(app)
       .get('/api/v1/audit/export.csv?q=loan.')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(csv.status).toBe(200);
     expect(csv.headers['content-type']).toContain('text/csv');
     expect(csv.headers['content-disposition']).toContain('audit-log-');
@@ -330,7 +330,7 @@ describe('forensic dashboard', () => {
 
     const pdf = await request(app)
       .get('/api/v1/audit/export.pdf')
-      .set(...authHeader(auditor));
+      .set(...authHeader(admin));
     expect(pdf.status).toBe(200);
     expect(pdf.headers['content-type']).toContain('application/pdf');
     expect(pdf.body.subarray(0, 4).toString()).toBe('%PDF');

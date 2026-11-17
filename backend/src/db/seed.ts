@@ -8,9 +8,9 @@ import { pool, withTransaction } from './pool';
  * Demo seed data.
  *
  * Every account uses the password from DEMO_SEED_PASSWORD (required).
- * The auditor account is created here rather than through /auth/register
+ * The admin account is created here rather than through /auth/register
  * on purpose: the public API can only create borrowers and staff, so an
- * auditor must be provisioned by an administrator.
+ * admin must be provisioned by an administrator.
  *
  * Safety guards:
  *  - Refuses to run when NODE_ENV=production unless ALLOW_DEMO_SEED=true.
@@ -26,7 +26,7 @@ export const DEMO_PASSWORD = DEMO_SEED_PASSWORD ?? 'UNSET';
 interface SeedPerson {
   email: string;
   fullName: string;
-  role: 'borrower' | 'staff' | 'auditor';
+  role: 'borrower' | 'staff' | 'admin';
   staffId?: string;
   profile?: {
     nationalId?: string;
@@ -74,9 +74,9 @@ export const demoPeople: SeedPerson[] = [
     },
   },
   {
-    email: 'auditor@smf.demo',
+    email: 'admin@smf.demo',
     fullName: 'Forensic Desk',
-    role: 'auditor',
+    role: 'admin',
   },
 ];
 

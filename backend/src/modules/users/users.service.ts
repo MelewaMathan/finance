@@ -36,7 +36,7 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
     };
   }
 
-  if (user.role === 'auditor') {
+  if (user.role === 'admin') {
     return { nationalIdMasked: null, phoneMasked: null, occupation: null, monthlyIncomeCents: null };
   }
 

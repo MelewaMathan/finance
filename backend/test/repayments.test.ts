@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { sha256Hex } from '../src/lib/crypto';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M3 -- repayment tracking, penalties and statements.
@@ -240,18 +240,18 @@ describe('repayments', () => {
     expect(audits.map((row) => row.detail.format).sort()).toEqual(['csv', 'json', 'pdf']);
   });
 
-  it('keeps other borrowers out and auditors read-only', async () => {
+  it('keeps other borrowers out and admins read-only', async () => {
     const { loanId } = await scenario('owner@repay.test');
     const outsider = await register('outsider@repay.test', { role: 'borrower' });
-    const auditor = await createAuditor('auditor@repay.test');
+    const admin = await createAdmin('admin@repay.test');
 
     const read = await request(app).get(`/api/v1/loans/${loanId}/statement`).set(...authHeader(outsider));
     expect(read.status).toBe(404);
 
-    const write = await repay(auditor, loanId, { amountCents: 10_000, method: 'cash' });
+    const write = await repay(admin, loanId, { amountCents: 10_000, method: 'cash' });
     expect(write.status).toBe(403);
 
-    const auditRead = await request(app).get(`/api/v1/loans/${loanId}/statement`).set(...authHeader(auditor));
+    const auditRead = await request(app).get(`/api/v1/loans/${loanId}/statement`).set(...authHeader(admin));
     expect(auditRead.status).toBe(200);
   });
 });

@@ -97,7 +97,7 @@ export interface SessionUser {
   id: string;
   email: string;
   fullName: string;
-  role: 'borrower' | 'staff' | 'auditor';
+  role: 'borrower' | 'staff' | 'admin';
   createdAt?: string;
 }
 

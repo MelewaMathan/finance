@@ -43,7 +43,7 @@ const registerSchema = z.object({
   password: passwordSchema,
   fullName: z.string().trim().min(2).max(120),
   // Borrowers self-register freely. Staff registration requires a valid invite
-  // code (checked in auth.service.ts). Auditor accounts cannot be self-registered.
+  // code (checked in auth.service.ts). Admin accounts cannot be self-registered.
   role: z.enum(['borrower', 'staff']),
   inviteCode: z.string().max(128).optional(),
   staffId: z.string().trim().max(80).optional(),
@@ -184,9 +184,9 @@ authRouter.get(
 );
 
 // ---------------------------------------------------------------------------
-// Auditor-only: login approval management
+// Admin-only: login approval management
 // ---------------------------------------------------------------------------
-authRouter.get('/login-requests', requireAuth, requireRole('auditor'), async (req, res) => {
+authRouter.get('/login-requests', requireAuth, requireRole('admin'), async (req, res) => {
   const rows = await listPendingApprovals(req.user!.id);
   res.json({
     items: rows.map((r) => ({
@@ -202,7 +202,7 @@ authRouter.get('/login-requests', requireAuth, requireRole('auditor'), async (re
   });
 });
 
-authRouter.get('/login-requests/history', requireAuth, requireRole('auditor'), async (req, res) => {
+authRouter.get('/login-requests/history', requireAuth, requireRole('admin'), async (req, res) => {
   const rows = await listApprovalHistory(req.user!.id);
   res.json({ items: rows });
 });
@@ -210,7 +210,7 @@ authRouter.get('/login-requests/history', requireAuth, requireRole('auditor'), a
 authRouter.post(
   '/login-requests/:id/decide',
   requireAuth,
-  requireRole('auditor'),
+  requireRole('admin'),
   validate(decideSchema),
   async (req, res) => {
     const body = req.body as z.infer<typeof decideSchema>;
@@ -223,7 +223,7 @@ authRouter.post(
   },
 );
 
-authRouter.get('/staff-accounts', requireAuth, requireRole('auditor'), async (_req, res) => {
+authRouter.get('/staff-accounts', requireAuth, requireRole('admin'), async (_req, res) => {
   const rows = await listStaffAccounts();
   res.json({
     items: rows.map((r) => ({
@@ -240,7 +240,7 @@ authRouter.get('/staff-accounts', requireAuth, requireRole('auditor'), async (_r
 authRouter.post(
   '/staff-accounts/:id/status',
   requireAuth,
-  requireRole('auditor'),
+  requireRole('admin'),
   validate(staffStatusSchema),
   async (req, res) => {
     const { action } = req.body as z.infer<typeof staffStatusSchema>;

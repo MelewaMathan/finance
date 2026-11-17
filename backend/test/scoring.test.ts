@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M5 -- advisory credit scoring.
@@ -94,7 +94,7 @@ describe('credit scoring', () => {
     expect(stretchedLoan.score.explanation.length).toBeGreaterThan(0);
   });
 
-  it('exposes the score to the borrower, the lender and an auditor but to nobody else', async () => {
+  it('exposes the score to the borrower, the lender and an admin but to nobody else', async () => {
     const borrowerSession = await borrower('grace@scoring.test');
     const lenderSession = await lender();
     const loan = await apply(borrowerSession, lenderSession.userId);
@@ -106,11 +106,11 @@ describe('credit scoring', () => {
     expect(asBorrower.body.score.id).toBe(loan.score.id);
     expect(asBorrower.body.model.source).toBe('fallback_heuristic');
 
-    const auditor = await createAuditor('auditor@scoring.test');
-    const asAuditor = await request(app)
+    const admin = await createAdmin('admin@scoring.test');
+    const asAdmin = await request(app)
       .get(`/api/v1/loans/${loan.id}/score`)
-      .set(...authHeader(auditor));
-    expect(asAuditor.status).toBe(200);
+      .set(...authHeader(admin));
+    expect(asAdmin.status).toBe(200);
 
     const outsider = await borrower('outsider@scoring.test');
     const asOutsider = await request(app)

@@ -14,11 +14,11 @@ import { LenderDashboard as EnterpriseDashboard } from './pages/lender/LenderDas
 import { ApplicationsPage } from './pages/lender/ApplicationsPage';
 import { FraudQueuePage } from './pages/lender/FraudQueuePage';
 import { LoanDetailPage } from './pages/shared/LoanDetailPage';
-import { AuditorDashboard } from './pages/auditor/AuditorDashboard';
-import { AuditLogPage } from './pages/auditor/AuditLogPage';
-import { TimelinePage } from './pages/auditor/TimelinePage';
-import { IntegrityPage } from './pages/auditor/IntegrityPage';
-import { AccessRequestsPage } from './pages/auditor/AccessRequestsPage';
+import { AdminDashboard } from './pages/admin/AdminDashboard';
+import { AuditLogPage } from './pages/admin/AuditLogPage';
+import { TimelinePage } from './pages/admin/TimelinePage';
+import { IntegrityPage } from './pages/admin/IntegrityPage';
+import { AccessRequestsPage } from './pages/admin/AccessRequestsPage';
 
 /** Blocks the app until the session is known; redirects anonymous users. */
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -29,7 +29,7 @@ function RequireAuth({ children }: { children: ReactNode }) {
 }
 
 /** Prevents a signed-in user from opening another role's screens. */
-function RequireRole({ role, children }: { role: 'borrower' | 'staff' | 'auditor'; children: ReactNode }) {
+function RequireRole({ role, children }: { role: 'borrower' | 'staff' | 'admin'; children: ReactNode }) {
   const { user, status } = useAuth();
   if (status === 'loading') return <FullPageLoader />;
   if (!user) return <Navigate to="/login" replace />;
@@ -127,41 +127,41 @@ export default function App() {
         />
 
         <Route
-          path="/auditor"
+          path="/admin"
           element={
-            <RequireRole role="auditor">
-              <AuditorDashboard />
+            <RequireRole role="admin">
+              <AdminDashboard />
             </RequireRole>
           }
         />
         <Route
-          path="/auditor/audit"
+          path="/admin/audit"
           element={
-            <RequireRole role="auditor">
+            <RequireRole role="admin">
               <AuditLogPage />
             </RequireRole>
           }
         />
         <Route
-          path="/auditor/timeline"
+          path="/admin/timeline"
           element={
-            <RequireRole role="auditor">
+            <RequireRole role="admin">
               <TimelinePage />
             </RequireRole>
           }
         />
         <Route
-          path="/auditor/integrity"
+          path="/admin/integrity"
           element={
-            <RequireRole role="auditor">
+            <RequireRole role="admin">
               <IntegrityPage />
             </RequireRole>
           }
         />
         <Route
-          path="/auditor/access-requests"
+          path="/admin/access-requests"
           element={
-            <RequireRole role="auditor">
+            <RequireRole role="admin">
               <AccessRequestsPage />
             </RequireRole>
           }

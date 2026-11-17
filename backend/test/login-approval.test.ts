@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import bcrypt from 'bcryptjs';
 import { query, queryOne } from '../src/db/pool';
-import { app, createAuditor, register, request, PASSWORD, authHeader } from './helpers';
+import { app, createAdmin, register, request, PASSWORD, authHeader } from './helpers';
 
 /**
- * Auditor-approved staff login flow.
+ * Admin-approved staff login flow.
  *
  * Security properties verified:
  *  - A staff member with correct credentials gets HTTP 202 (no session) until approved.
@@ -12,8 +12,8 @@ import { app, createAuditor, register, request, PASSWORD, authHeader } from './h
  *  - A denied request never issues a session.
  *  - An expired request never issues a session.
  *  - A pending or suspended staff account gets the same generic failure as a wrong password.
- *  - Borrowers and staff get 403 on auditor approval endpoints.
- *  - An auditor cannot approve their own login request.
+ *  - Borrowers and staff get 403 on admin approval endpoints.
+ *  - An admin cannot approve their own login request.
  *  - Every event appears in the audit log.
  */
 describe('staff login approval flow', () => {
@@ -56,7 +56,7 @@ describe('staff login approval flow', () => {
     expect(res.body.accessToken).toBeUndefined();
   });
 
-  it('poll returns pending before an auditor acts', async () => {
+  it('poll returns pending before an admin acts', async () => {
     await createActiveStaff('pollpend@approval.test');
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -71,9 +71,9 @@ describe('staff login approval flow', () => {
     expect(poll.body.status).toBe('pending');
   });
 
-  it('poll returns approved + session after auditor approves, and is then used', async () => {
+  it('poll returns approved + session after admin approves, and is then used', async () => {
     await createActiveStaff('approveme@approval.test');
-    const auditor = await createAuditor('aud-approve@approval.test');
+    const admin = await createAdmin('aud-approve@approval.test');
 
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -81,10 +81,10 @@ describe('staff login approval flow', () => {
     expect(login.status).toBe(202);
     const { requestId, pollToken } = login.body;
 
-    // Auditor approves.
+    // Admin approves.
     const decide = await request(app)
       .post(`/api/v1/auth/login-requests/${requestId}/decide`)
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ decision: 'approve' });
     expect(decide.status).toBe(200);
 
@@ -110,9 +110,9 @@ describe('staff login approval flow', () => {
     expect(replay.body.accessToken).toBeUndefined();
   });
 
-  it('poll returns denied after auditor denies, and never issues a session', async () => {
+  it('poll returns denied after admin denies, and never issues a session', async () => {
     await createActiveStaff('denystaff@approval.test');
-    const auditor = await createAuditor('aud-deny@approval.test');
+    const admin = await createAdmin('aud-deny@approval.test');
 
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -122,7 +122,7 @@ describe('staff login approval flow', () => {
 
     await request(app)
       .post(`/api/v1/auth/login-requests/${requestId}/decide`)
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ decision: 'deny', reason: 'Suspicious location' });
 
     const poll = await request(app)
@@ -184,7 +184,7 @@ describe('staff login approval flow', () => {
     expect(res.body.error.message).toBe('Invalid email or password');
   });
 
-  it('a borrower gets 403 on the auditor login-requests endpoint', async () => {
+  it('a borrower gets 403 on the admin login-requests endpoint', async () => {
     const borrower = await register('borrow-noapprove@approval.test');
     const res = await request(app)
       .get('/api/v1/auth/login-requests')
@@ -192,11 +192,11 @@ describe('staff login approval flow', () => {
     expect(res.status).toBe(403);
   });
 
-  it('a staff user gets 403 on the auditor login-requests endpoint', async () => {
+  it('a staff user gets 403 on the admin login-requests endpoint', async () => {
     // We need a real session for the staff user; use a trick:
     // insert an already-approved row and use the session from it.
     await createActiveStaff('staffnoapprove@approval.test');
-    const auditorSetup = await createAuditor('aud-setup@approval.test');
+    const auditorSetup = await createAdmin('aud-setup@approval.test');
 
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -221,14 +221,14 @@ describe('staff login approval flow', () => {
     expect(res.status).toBe(403);
   });
 
-  it('an auditor cannot approve their own login request (guard rejects it)', async () => {
+  it('an admin cannot approve their own login request (guard rejects it)', async () => {
     // Auditors don't get login_approval rows because only staff go through the
     // approval flow, so this tests the explicit guard in decideLoginApproval.
-    // Manufacture a scenario by inserting a fake row pointing at the auditor.
-    const auditor = await createAuditor('aud-selfapprove@approval.test');
-    const auditorId = auditor.userId;
+    // Manufacture a scenario by inserting a fake row pointing at the admin.
+    const admin = await createAdmin('aud-selfapprove@approval.test');
+    const auditorId = admin.userId;
 
-    // Create a fake approval row attributed to the auditor's user id.
+    // Create a fake approval row attributed to the admin's user id.
     const { randomToken, sha256Hex } = await import('../src/lib/crypto');
     const tok = randomToken(32);
     const hash = sha256Hex(tok);
@@ -243,14 +243,14 @@ describe('staff login approval flow', () => {
 
     const res = await request(app)
       .post(`/api/v1/auth/login-requests/${row.id}/decide`)
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ decision: 'approve' });
     expect(res.status).toBe(403);
   });
 
   it('all approval events appear in the audit log', async () => {
     await createActiveStaff('auditcheck@approval.test');
-    const auditor = await createAuditor('aud-auditcheck@approval.test');
+    const admin = await createAdmin('aud-auditcheck@approval.test');
 
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -260,7 +260,7 @@ describe('staff login approval flow', () => {
 
     await request(app)
       .post(`/api/v1/auth/login-requests/${requestId}/decide`)
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ decision: 'approve' });
 
     await request(app)
@@ -292,7 +292,7 @@ describe('staff login approval flow', () => {
 
   it('deny without a reason returns 409', async () => {
     await createActiveStaff('nodeny@approval.test');
-    const auditor = await createAuditor('aud-nodeny@approval.test');
+    const admin = await createAdmin('aud-nodeny@approval.test');
 
     const login = await request(app)
       .post('/api/v1/auth/login')
@@ -301,7 +301,7 @@ describe('staff login approval flow', () => {
 
     const res = await request(app)
       .post(`/api/v1/auth/login-requests/${requestId}/decide`)
-      .set(...authHeader(auditor))
+      .set(...authHeader(admin))
       .send({ decision: 'deny' }); // no reason
     expect(res.status).toBe(409);
   });

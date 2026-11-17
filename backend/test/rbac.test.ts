@@ -1,12 +1,12 @@
 import jwt from 'jsonwebtoken';
 import { describe, expect, it } from 'vitest';
-import { app, createAuditor, register, request } from './helpers';
+import { app, createAdmin, register, request } from './helpers';
 
 /**
  * M1 -- role-based access control.
  *
  * The checks are enforced in middleware, not in the UI: a borrower must not be
- * able to reach lender screens, an auditor must never be able to write, and a
+ * able to reach lender screens, an admin must never be able to write, and a
  * token that was not signed by this server is rejected outright.
  */
 describe('RBAC', () => {
@@ -20,7 +20,7 @@ describe('RBAC', () => {
     expect(garbage.status).toBe(401);
 
     const borrower = await register('tamper@test.local');
-    const forged = jwt.sign({ sub: borrower.userId, role: 'auditor', typ: 'access' }, 'wrong-secret', {
+    const forged = jwt.sign({ sub: borrower.userId, role: 'admin', typ: 'access' }, 'wrong-secret', {
       issuer: 'secure-microfinance',
       audience: 'smf-web',
       expiresIn: '15m',
@@ -36,11 +36,11 @@ describe('RBAC', () => {
     expect(response.body.profile).toBeDefined();
   });
 
-  it('stops an auditor from writing anything', async () => {
-    const auditor = await createAuditor();
+  it('stops an admin from writing anything', async () => {
+    const admin = await createAdmin();
     const response = await request(app)
       .put('/api/v1/me/profile')
-      .set('Authorization', `Bearer ${auditor.token}`)
+      .set('Authorization', `Bearer ${admin.token}`)
       .send({ occupation: 'Not allowed' });
 
     expect(response.status).toBe(403);
@@ -61,12 +61,12 @@ describe('RBAC', () => {
     const borrower = await register('demoted@test.local');
     // Simulate a role change after the token was issued.
     const { query } = await import('../src/db/pool');
-    await query("UPDATE users SET role = 'auditor' WHERE id = $1", [borrower.userId]);
+    await query("UPDATE users SET role = 'admin' WHERE id = $1", [borrower.userId]);
 
     const response = await request(app)
       .put('/api/v1/me/profile')
       .set('Authorization', `Bearer ${borrower.token}`)
-      .send({ occupation: 'Now an auditor' });
+      .send({ occupation: 'Now an admin' });
 
     expect(response.status).toBe(403);
   });

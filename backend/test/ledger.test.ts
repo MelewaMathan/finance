@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { hashTransaction } from '../src/lib/canonical';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M4 -- ledger verification.
@@ -180,15 +180,15 @@ describe('ledger', () => {
     expect(response.body.report.summary.total).toBe(2);
   });
 
-  it('lets an auditor read any proof but hides a loan from an unrelated borrower', async () => {
+  it('lets an admin read any proof but hides a loan from an unrelated borrower', async () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
     const loanId = await disbursedLoan(borrower, lenderSession);
 
-    const auditor = await createAuditor('auditor@ledger.test');
-    const auditorView = await request(app).get(`/api/v1/loans/${loanId}/proof`).set(...authHeader(auditor));
-    expect(auditorView.status).toBe(200);
-    expect(auditorView.body.report.ok).toBe(true);
+    const admin = await createAdmin('admin@ledger.test');
+    const adminView = await request(app).get(`/api/v1/loans/${loanId}/proof`).set(...authHeader(admin));
+    expect(adminView.status).toBe(200);
+    expect(adminView.body.report.ok).toBe(true);
 
     const stranger = await borrowerWithProfile('stranger@ledger.test');
     const strangerView = await request(app).get(`/api/v1/loans/${loanId}/proof`).set(...authHeader(stranger));

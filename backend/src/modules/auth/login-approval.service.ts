@@ -30,7 +30,7 @@ export interface PendingApprovalRow {
  * client uses to check approval status.
  *
  * Throws conflict(429-ish) if a pending request already exists for this user,
- * to prevent spamming the auditor.
+ * to prevent spamming the admin.
  */
 export async function createLoginApproval(
   staffUserId: string,
@@ -214,8 +214,8 @@ export async function pollLoginApproval(
   });
 }
 
-/** Lists pending login approval requests for the auditor. */
-export async function listPendingApprovals(auditorId: string): Promise<PendingApprovalRow[]> {
+/** Lists pending login approval requests for the admin. */
+export async function listPendingApprovals(adminId: string): Promise<PendingApprovalRow[]> {
   // Expire stale rows first.
   await query(
     `UPDATE login_approvals SET status = 'expired'
@@ -241,7 +241,7 @@ export async function listPendingApprovals(auditorId: string): Promise<PendingAp
 }
 
 /** History of past decisions (last 100). */
-export async function listApprovalHistory(auditorId: string) {
+export async function listApprovalHistory(adminId: string) {
   return query<{
     id: string;
     staff_full_name: string;
@@ -276,12 +276,12 @@ export interface DecideApprovalInput {
 }
 
 /**
- * Auditor approves or denies a pending login request.
- * An auditor cannot approve their own login (they can't have a login_approval
+ * Admin approves or denies a pending login request.
+ * An admin cannot approve their own login (they can't have a login_approval
  * row since only staff get them, but we guard explicitly anyway).
  */
 export async function decideLoginApproval(
-  auditorId: string,
+  adminId: string,
   approvalId: string,
   input: DecideApprovalInput,
   context: RefreshContext & { requestId?: string },
@@ -303,9 +303,9 @@ export async function decideLoginApproval(
 
   if (!row) throw notFound('Login approval request not found');
 
-  // Guard: an auditor cannot approve their own login attempt.
-  if (row.staff_user_id === auditorId) {
-    throw forbidden('An auditor cannot approve their own login request');
+  // Guard: an admin cannot approve their own login attempt.
+  if (row.staff_user_id === adminId) {
+    throw forbidden('An admin cannot approve their own login request');
   }
 
   if (row.status !== 'pending') {
@@ -325,12 +325,12 @@ export async function decideLoginApproval(
             decided_at = now(),
             decision_reason = $4
       WHERE id = $1`,
-    [approvalId, newStatus, auditorId, input.reason ?? null],
+    [approvalId, newStatus, adminId, input.reason ?? null],
   );
 
   await recordAudit({
-    actorUserId: auditorId,
-    actorRole: 'auditor',
+    actorUserId: adminId,
+    actorRole: 'admin',
     action: `auth.login_approval_${newStatus}`,
     entityType: 'login_approval',
     entityId: approvalId,
@@ -344,7 +344,7 @@ export async function decideLoginApproval(
   });
 }
 
-/** Lists all staff users with their account status (for the auditor). */
+/** Lists all staff users with their account status (for the admin). */
 export async function listStaffAccounts() {
   return query<{
     id: string;
@@ -362,7 +362,7 @@ export async function listStaffAccounts() {
 }
 
 export async function setStaffAccountStatus(
-  auditorId: string,
+  adminId: string,
   staffUserId: string,
   newStatus: 'active' | 'pending' | 'suspended',
   context: RefreshContext & { requestId?: string },
@@ -378,8 +378,8 @@ export async function setStaffAccountStatus(
   await query('UPDATE users SET status = $2 WHERE id = $1', [staffUserId, newStatus]);
 
   await recordAudit({
-    actorUserId: auditorId,
-    actorRole: 'auditor',
+    actorUserId: adminId,
+    actorRole: 'admin',
     action: `auth.staff_account_${newStatus === 'active' ? 'activated' : newStatus === 'suspended' ? 'suspended' : 'pending'}`,
     entityType: 'user',
     entityId: staffUserId,

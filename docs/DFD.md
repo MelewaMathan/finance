@@ -10,7 +10,7 @@ important one: the whole design is an argument about the one boundary that must 
 flowchart LR
     B["Borrower<br/>(individual)"]
     L["Staff<br/>(loan officer)"]
-    A["Forensic auditor<br/>(read-only)"]
+    A["Forensic admin<br/>(read-only)"]
     S["SecureMicrofinance<br/>0"]
     ML["ML service<br/>(FastAPI, internal)"]
     CH["LoanLedger<br/>(Hardhat / Polygon)"]
@@ -40,7 +40,7 @@ internal component — it sees numbers derived from the loan, never identity fie
 flowchart TB
     Z1["Borrower"] -->|credentials, application,<br/>repayment claim| P1
     Z2["Staff"] -->|credentials, verify note,<br/>decision, disbursement, review note| P1
-    Z3["Auditor"] -->|credentials, filters,<br/>integrity request| P1
+    Z3["Admin"] -->|credentials, filters,<br/>integrity request| P1
 
     P1["1. Authenticate and authorise<br/>bcrypt · JWT · refresh rotation · RBAC"]
     P1 -->|"verified actor + role"| P2
@@ -125,7 +125,7 @@ turn one into the other.
 | B3 | API → file store | Generated PDFs | Server-side rendering only, SHA-256 recorded per document, download audited |
 | B4 | API → ML service | Derived numeric features | No identifiers sent; 3-second timeout; failure falls back deterministically |
 | B5 | API → blockchain | **Hashes only** | Recorder allow-list on-chain; no update/delete functions; no PII in the payload |
-| B6 | Auditor → API | Read queries and export requests | Auditor-only routes, every read audited, exports embed their own verification state |
+| B6 | Admin → API | Read queries and export requests | Admin-only routes, every read audited, exports embed their own verification state |
 | B7 | DBA → database | Direct SQL | Guard triggers block UPDATE/DELETE/TRUNCATE on `audit_log`; the hash chain exposes anyone who disables them |
 
 ## Data classification and where each item is allowed to go
@@ -139,10 +139,10 @@ turn one into the other.
 | Full name, email | personal | plaintext (operational need) | to the counterparty and auditors | never | never | yes (actor name resolved at read time) |
 | Loan amount, rate, schedule | financial | plaintext cents | to the two parties and auditors | **yes** (aggregated) | **no** (only a hash) | yes |
 | Payment reference (M-Pesa code) | financial | plaintext + normalised | to the two parties and auditors | no | no | yes, inside `detail` |
-| IP address, user agent | technical | plaintext | only to the auditor | no | no | yes |
+| IP address, user agent | technical | plaintext | only to the admin | no | no | yes |
 | Record hash, chain root | evidence | `char(64)` | yes | no | **yes** | yes (as `after_hash`) |
 | Model risk score | derived | `numeric(5,4)` | yes | produces it | no | no (only the flag) |
-| Fraud flag + reason | derived | jsonb | to the lender and auditor | no | no | yes |
+| Fraud flag + reason | derived | jsonb | to the lender and admin | no | no | yes |
 
 The chain column is the design's central claim: **every row before it may be rich; the chain may only ever
 contain hashes and timestamps.** A public ledger that listed amounts would let anyone graph a borrower's
@@ -154,5 +154,5 @@ credit history — which, for a customer of an informal lender, is a safety prob
 * `refresh_tokens` accumulate as revoked rows: cheap, and they are the evidence for reuse detection.
 * Documents are kept for the life of the loan plus whatever the lender's jurisdiction requires; a deletion
   would be an audited action in a real deployment (this prototype has no delete path at all).
-* `integrity_checks` keeps every run; the history is how an auditor shows the record was verified *then*, not
+* `integrity_checks` keeps every run; the history is how an admin shows the record was verified *then*, not
   only now.

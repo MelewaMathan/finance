@@ -105,7 +105,7 @@ export function AwaitingApprovalScreen({ pending, onCancel }: Props) {
       <div className="card p-6 sm:p-8 w-full max-w-md">
         <h1 className="text-xl font-semibold text-slate-900">Request expired</h1>
         <p className="mt-2 text-sm text-slate-600">
-          No auditor approved the request within the time limit. Please sign in again.
+          No admin approved the request within the time limit. Please sign in again.
         </p>
         <button type="button" className="btn-primary mt-6 w-full" onClick={onCancel}>
           Try again
@@ -118,11 +118,11 @@ export function AwaitingApprovalScreen({ pending, onCancel }: Props) {
     <div className="card p-6 sm:p-8 w-full max-w-md">
       <div className="flex items-center gap-3">
         <Spinner label="Waiting for approval" />
-        <h1 className="text-xl font-semibold text-slate-900">Waiting for auditor approval</h1>
+        <h1 className="text-xl font-semibold text-slate-900">Waiting for admin approval</h1>
       </div>
 
       <p className="mt-3 text-sm text-slate-600">
-        Your login credentials were accepted. An auditor must approve this session before
+        Your login credentials were accepted. An admin must approve this session before
         you can access the dashboard.
       </p>
 

@@ -319,7 +319,7 @@ export function FraudQueuePage() {
                 <div className="mt-4 border-t border-slate-100 pt-4">
                   <TextInput
                     aria-label="Reviewer note"
-                    placeholder="Why? (required — this is what an auditor will read)"
+                    placeholder="Why? (required — this is what an admin will read)"
                     value={note}
                     onChange={(event) => setNotes((current) => ({ ...current, [flag.id]: event.target.value }))}
                   />

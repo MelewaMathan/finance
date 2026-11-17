@@ -4,9 +4,9 @@
  * After a staff member submits correct credentials, the server returns HTTP 202
  * with a pollToken instead of a session. The browser polls
  * GET /auth/login-requests/:id/status?pollToken=… every few seconds until the
- * auditor approves, denies, or the request expires.
+ * admin approves, denies, or the request expires.
  *
- * Auditor-facing helpers for the approval queue live in the second half.
+ * Admin-facing helpers for the approval queue live in the second half.
  */
 import { api } from './api';
 
@@ -44,7 +44,7 @@ export async function cancelApprovalRequest(
 }
 
 // ---------------------------------------------------------------------------
-// Auditor helpers
+// Admin helpers
 // ---------------------------------------------------------------------------
 
 export interface PendingRequest {

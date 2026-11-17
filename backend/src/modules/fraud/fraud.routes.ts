@@ -21,20 +21,20 @@ import {
 /**
  * Fraud review + alert routes (M6).
  *
- * Reading the queue is staff/auditor only; acting on it is the enterprise's
- * responsibility because it is the account holder for the book. An auditor
+ * Reading the queue is staff/admin only; acting on it is the enterprise's
+ * responsibility because it is the account holder for the book. An admin
  * reviews the reviewer while remaining read-only.
  */
 export const fraudRouter = Router();
 
-fraudRouter.get('/fraud/summary', requireAuth, requireRole('staff', 'auditor'), async (req, res) => {
+fraudRouter.get('/fraud/summary', requireAuth, requireRole('staff', 'admin'), async (req, res) => {
   res.json({ summary: await getFraudSummary(req.user!) });
 });
 
 fraudRouter.get(
   '/fraud/flags',
   requireAuth,
-  requireRole('staff', 'auditor'),
+  requireRole('staff', 'admin'),
   validate(flagQuerySchema, 'query'),
   async (req, res) => {
     const flags = await listFlags(req.user!, req.query as unknown as Parameters<typeof listFlags>[1]);

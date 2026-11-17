@@ -25,15 +25,15 @@ import {
 /**
  * Forensic dashboard routes (M7).
  *
- * Everything here is auditor-only, including the reads. That is deliberate:
+ * Everything here is admin-only, including the reads. That is deliberate:
  * the audit log contains other users' IP addresses and request ids, and a
- * lender who could read it could also learn which of their transactions the
+ * staff member who could read it could also learn which of their transactions the
  * review queue is watching.
  */
 export const auditRouter = Router();
 
-auditRouter.use('/audit', requireAuth, requireRole('auditor'));
-auditRouter.use('/integrity', requireAuth, requireRole('auditor'));
+auditRouter.use('/audit', requireAuth, requireRole('admin'));
+auditRouter.use('/integrity', requireAuth, requireRole('admin'));
 
 const asFilters = (query: AuditExportQuery): AuditFilters => ({
   q: query.q,

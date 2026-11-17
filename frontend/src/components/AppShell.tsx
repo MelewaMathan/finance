@@ -7,7 +7,7 @@ import { LogoMark } from './ui';
 /**
  * Application shell: responsive sidebar on desktop, slide-over menu on
  * mobile. Navigation is derived from the authenticated role, so a borrower
- * never sees the staff or auditor destinations (the API enforces the same rule).
+ * never sees the staff or admin destinations (the API enforces the same rule).
  */
 type IconName = 'home' | 'file' | 'cash' | 'shield' | 'clock' | 'check' | 'report' | 'user' | 'bell';
 
@@ -38,7 +38,7 @@ interface NavItem {
   end?: boolean;
 }
 
-const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'auditor', NavItem[]> = {
+const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'admin', NavItem[]> = {
   borrower: [
     { to: '/borrower', label: 'Dashboard', icon: 'home', end: true },
     { to: '/borrower/apply', label: 'Apply for a loan', icon: 'file' },
@@ -51,12 +51,12 @@ const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'auditor', NavItem[]> = {
     { to: '/enterprise/fraud', label: 'Fraud queue', icon: 'shield' },
     { to: '/profile', label: 'My profile', icon: 'user' },
   ],
-  auditor: [
-    { to: '/auditor', label: 'Overview', icon: 'home', end: true },
-    { to: '/auditor/access-requests', label: 'Access requests', icon: 'shield' },
-    { to: '/auditor/audit', label: 'Audit log', icon: 'report' },
-    { to: '/auditor/timeline', label: 'Timeline', icon: 'clock' },
-    { to: '/auditor/integrity', label: 'Integrity checks', icon: 'check' },
+  admin: [
+    { to: '/admin', label: 'Overview', icon: 'home', end: true },
+    { to: '/admin/access-requests', label: 'Access requests', icon: 'shield' },
+    { to: '/admin/audit', label: 'Audit log', icon: 'report' },
+    { to: '/admin/timeline', label: 'Timeline', icon: 'clock' },
+    { to: '/admin/integrity', label: 'Integrity checks', icon: 'check' },
   ],
 };
 

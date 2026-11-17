@@ -36,10 +36,10 @@ describe('authentication', () => {
     expect(cookieHeader).toContain('SameSite=Strict');
   });
 
-  it('refuses to self-register an auditor account', async () => {
+  it('refuses to self-register an admin account', async () => {
     const response = await request(app)
       .post('/api/v1/auth/register')
-      .send({ email: 'sneaky@test.local', password: PASSWORD, fullName: 'Sneaky', role: 'auditor' });
+      .send({ email: 'sneaky@test.local', password: PASSWORD, fullName: 'Sneaky', role: 'admin' });
 
     expect(response.status).toBe(400);
   });

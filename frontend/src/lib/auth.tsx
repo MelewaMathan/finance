@@ -32,7 +32,7 @@ interface AuthContextValue {
   user: SessionUser | null;
   profile: ProfileSummary | null;
   /**
-   * Returns normally for borrowers/auditors.
+   * Returns normally for borrowers/admins.
    * Returns { awaitingApproval: true, ... } for staff (server 202).
    * Throws ApiError for all other failures.
    */
@@ -112,13 +112,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return raw as AwaitingApprovalResponse;
       }
 
-      // Borrower / Auditor — normal session.
+      // Borrower / Admin — normal session.
       await applySession(raw as SessionPayload);
     },
     [applySession],
   );
 
-  /** Called by the approval-polling screen once the auditor approves. */
+  /** Called by the approval-polling screen once the admin approves. */
   const applyApprovedSession = useCallback(
     async (payload: SessionPayload) => {
       await applySession(payload);
@@ -171,8 +171,8 @@ export function homeFor(role: SessionUser['role']): string {
   switch (role) {
     case 'staff':
       return '/enterprise';
-    case 'auditor':
-      return '/auditor';
+    case 'admin':
+      return '/admin';
     default:
       return '/borrower';
   }
@@ -181,5 +181,5 @@ export function homeFor(role: SessionUser['role']): string {
 export const ROLE_LABEL: Record<SessionUser['role'], string> = {
   borrower: 'Borrower',
   staff: 'Staff',
-  auditor: 'Forensic auditor',
+  admin: 'Forensic admin',
 };

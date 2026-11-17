@@ -22,7 +22,7 @@ import { createLoginApproval } from './login-approval.service';
  *  - a single generic message for "unknown email" and "wrong password" so the
  *    endpoint cannot be used to enumerate accounts
  *  - every success and failure is written to the audit chain
- *  - staff logins require auditor approval before a session is issued
+ *  - staff logins require admin approval before a session is issued
  */
 export interface RegisterInput {
   email: string;
@@ -42,7 +42,7 @@ export interface AuthResult {
   refresh: RefreshIssue;
 }
 
-/** Returned instead of AuthResult when a staff login needs auditor approval. */
+/** Returned instead of AuthResult when a staff login needs admin approval. */
 export interface StaffApprovalPending {
   awaitingApproval: true;
   requestId: string;
@@ -78,7 +78,7 @@ export async function register(input: RegisterInput, context: RefreshContext & {
   if (existing) throw conflict('An account with that email already exists');
 
   // Staff self-registration requires a valid invite code (enforced on the
-  // backend regardless of what the UI sends). Auditor accounts cannot be
+  // backend regardless of what the UI sends). Admin accounts cannot be
   // created through this endpoint at all.
   if (input.role === 'staff') {
     if (!input.inviteCode || input.inviteCode !== config.STAFF_INVITE_CODE) {
@@ -246,7 +246,7 @@ export async function login(
   }
 
   // -------------------------------------------------------------------------
-  // Borrower / Auditor — issue a session immediately (unchanged behaviour).
+  // Borrower / Admin — issue a session immediately (unchanged behaviour).
   // -------------------------------------------------------------------------
   await query('UPDATE users SET failed_attempts = 0, locked_until = NULL, last_login_at = now() WHERE id = $1', [row.id]);
   await recordAudit({

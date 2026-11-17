@@ -114,8 +114,8 @@ const FLAG_SELECT = `
 `;
 
 function assertQueueReader(actor: Actor): void {
-  if (actor.role !== 'staff' && actor.role !== 'auditor') {
-    throw forbidden('Only the enterprise and auditors may review fraud flags');
+  if (actor.role !== 'staff' && actor.role !== 'admin') {
+    throw forbidden('Only the enterprise and admins may review fraud flags');
   }
 }
 
@@ -457,7 +457,6 @@ export interface FraudSummary {
 export async function getFraudSummary(actor: Actor): Promise<FraudSummary> {
   assertQueueReader(actor);
   const lenderScope = actor.role === 'staff' ? actor.id : null;
-
   const rows = await query<{ severity: Severity; count: number }>(
     `SELECT f.severity, count(*)::int AS count
        FROM fraud_flags f

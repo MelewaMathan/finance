@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../src/config/env';
 import { query } from '../src/db/pool';
 import { sha256Hex } from '../src/lib/crypto';
-import { authHeader, createAuditor, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
 
 /**
  * M2 -- loan application and management.
@@ -109,7 +109,7 @@ describe('loans', () => {
     const otherBorrower = await borrowerWithProfile('other@loans.test');
     const lenderSession = await lender();
     const otherLender = await lender('lender2@loans.test');
-    const auditor = await createAuditor('auditor@loans.test');
+    const admin = await createAdmin('admin@loans.test');
 
     const mine = await applyLoan(borrower, lenderSession.userId);
     expect(mine.status).toBe(201);
@@ -124,7 +124,7 @@ describe('loans', () => {
       .set(...authHeader(otherBorrower));
     expect(stranger.status).toBe(404);
 
-    const auditView = await request(app).get('/api/v1/loans').set(...authHeader(auditor));
+    const auditView = await request(app).get('/api/v1/loans').set(...authHeader(admin));
     expect(auditView.status).toBe(200);
     expect(auditView.body.total).toBe(2);
   });

@@ -48,7 +48,7 @@ paths:
       summary: Create a borrower or staff account
       description: >
         Borrowers self-register freely. Staff registration requires a valid invite code
-        (STAFF_INVITE_CODE in the server environment). Auditor accounts cannot be
+        (STAFF_INVITE_CODE in the server environment). Admin accounts cannot be
         self-registered; they are provisioned directly in the database.
         Returns a 15-minute access token and sets an httpOnly refresh cookie.
       security: []
@@ -305,7 +305,7 @@ paths:
     get:
       tags: [loans]
       summary: List loans visible to the caller
-      description: A borrower sees their own applications; a lender sees their book; an auditor sees everything.
+      description: A borrower sees their own applications; a lender sees their book; an admin sees everything.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -746,7 +746,7 @@ paths:
   /v1/fraud/summary:
     get:
       tags: [fraud]
-      summary: Open flags, held money and alerts at a glance (lender, auditor)
+      summary: Open flags, held money and alerts at a glance (lender, admin)
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -762,7 +762,7 @@ paths:
   /v1/fraud/flags:
     get:
       tags: [fraud]
-      summary: Review queue (lender, auditor)
+      summary: Review queue (lender, admin)
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -873,7 +873,7 @@ paths:
   /v1/audit/logs:
     get:
       tags: [audit]
-      summary: Search the append-only audit log (auditor only)
+      summary: Search the append-only audit log (admin only)
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -924,7 +924,7 @@ paths:
   /v1/audit/actions:
     get:
       tags: [audit]
-      summary: Action names with counts, for the filter (auditor only)
+      summary: Action names with counts, for the filter (admin only)
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -946,7 +946,7 @@ paths:
   /v1/audit/timeline:
     get:
       tags: [audit]
-      summary: One loan's chronology from every source (auditor only)
+      summary: One loan's chronology from every source (admin only)
       description: Merges audit rows with transactions, documents and fraud flags, oldest first.
       security: [{ bearerAuth: [] }]
       parameters:
@@ -990,7 +990,7 @@ paths:
   /v1/audit/export.csv:
     get:
       tags: [audit]
-      summary: Export the filtered log as CSV (auditor only)
+      summary: Export the filtered log as CSV (admin only)
       description: >
         The file carries its own verification state: chain head, head hash and
         whether the chain verified at export time, plus the filters used. The
@@ -1010,7 +1010,7 @@ paths:
   /v1/audit/export.pdf:
     get:
       tags: [audit]
-      summary: Export the filtered log as PDF (auditor only)
+      summary: Export the filtered log as PDF (admin only)
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -1026,7 +1026,7 @@ paths:
   /v1/integrity/check:
     post:
       tags: [audit]
-      summary: Recompute hashes and compare with what was stored (auditor only)
+      summary: Recompute hashes and compare with what was stored (admin only)
       description: >
         `audit_chain` verifies the log only. `all` additionally re-derives every
         loan's payment hashes and compares them with the ledger. `loan` scopes
@@ -1060,7 +1060,7 @@ paths:
   /v1/integrity/checks:
     get:
       tags: [audit]
-      summary: Previous integrity runs (auditor only)
+      summary: Previous integrity runs (admin only)
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -1102,7 +1102,7 @@ components:
         id: { type: string, format: uuid }
         email: { type: string, format: email }
         fullName: { type: string }
-        role: { type: string, enum: [borrower, staff, auditor] }
+        role: { type: string, enum: [borrower, staff, admin] }
         createdAt: { type: string, format: date-time }
     Session:
       type: object

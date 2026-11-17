@@ -31,7 +31,7 @@ erDiagram
         uuid id PK
         text email UK "stored lower-case (CHECK constraint)"
         text password_hash "bcrypt, cost 12"
-        user_role role "borrower | lender | auditor"
+        user_role role "borrower | lender | admin"
         text full_name
         user_status status "active | suspended | closed"
         integer failed_attempts
@@ -262,14 +262,14 @@ loan, the model cites feature values — and the reviewer must be able to read t
 **Evidence group.** `audit_log` is the spine. Its `row_hash` covers `prev_hash`, so the rows form a chain: edit
 row 12 and rows 13…n no longer link, *and* row 12 no longer matches its own content. `integrity_checks` stores
 what each run saw so a later reader can tell "verified on 3 Nov" from "verified now". `audit_anchors` records
-where a chain root was written on-chain, which is what lets an auditor say the log existed in that state at
+where a chain root was written on-chain, which is what lets an admin say the log existed in that state at
 that time even if the whole database were later replaced.
 
 ## Enumerated values
 
 | Type | Values |
 | --- | --- |
-| `user_role` | `borrower`, `lender`, `auditor` |
+| `user_role` | `borrower`, `lender`, `admin` |
 | `user_status` | `active`, `suspended`, `closed` |
 | `loan_status` | `pending`, `under_review`, `approved`, `rejected`, `held`, `disbursed`, `active`, `settled`, `defaulted`, `cancelled` |
 | `repayment_frequency` | `daily`, `weekly`, `monthly` |
