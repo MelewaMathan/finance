@@ -35,8 +35,8 @@ export function AdminDashboard() {
     <div>
       <PageHeader
         title="Forensic overview"
-        subtitle="Read-only access to the immutable audit trail, integrity checks and ledger proofs."
-        actions={<Badge tone="info">Read-only role</Badge>}
+        subtitle="Review the audit trail, integrity checks, ledger proofs and administrator access."
+        actions={<Badge tone="info">Administrator</Badge>}
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -62,6 +62,10 @@ export function AdminDashboard() {
 
         <Card title="Start an investigation">
           <div className="space-y-3">
+            <Link to="/admin/admins" className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 hover:border-brand-400">
+              <span className="text-sm font-medium text-slate-900">Manage administrator accounts</span>
+              <span className="text-slate-400">→</span>
+            </Link>
             <Link to="/admin/access-requests" className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3 hover:border-brand-400">
               <span className="text-sm font-medium text-slate-900">Review staff login requests</span>
               <span className="text-slate-400">→</span>

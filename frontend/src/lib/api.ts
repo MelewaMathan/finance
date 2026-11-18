@@ -104,6 +104,7 @@ export interface SessionUser {
 export interface SessionPayload {
   user: SessionUser;
   accessToken: string;
+  mustChangePassword?: boolean;
 }
 
 /**

@@ -53,6 +53,7 @@ const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'admin', NavItem[]> = {
   ],
   admin: [
     { to: '/admin', label: 'Overview', icon: 'home', end: true },
+    { to: '/admin/admins', label: 'Admins', icon: 'user' },
     { to: '/admin/access-requests', label: 'Access requests', icon: 'shield' },
     { to: '/admin/audit', label: 'Audit log', icon: 'report' },
     { to: '/admin/timeline', label: 'Timeline', icon: 'clock' },
@@ -182,8 +183,7 @@ export function AppShell() {
  * background; cards stay white. To change the colours edit --auth-grad-from
  * and --auth-grad-to in src/index.css — no component changes needed.
  *
- * Pass `headerRight` to render something in the top-right corner of the
- * header — the login page uses this slot for the hamburger role-switcher.
+ * Pass `headerRight` to render something in the top-right corner of the header.
  */
 export function AuthLayout({
   children,

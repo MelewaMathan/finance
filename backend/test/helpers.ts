@@ -4,6 +4,7 @@ import request from 'supertest';
 import { createApp } from '../src/app';
 import { query, queryOne } from '../src/db/pool';
 import type { Role } from '../src/types/express';
+import { issueRefreshToken, signAccessToken } from '../src/modules/auth/token.service';
 
 /** Shared helpers for the API test suites. */
 
@@ -39,6 +40,24 @@ export async function register(
       inviteCode: overrides.inviteCode,
       staffId: overrides.staffId,
     });
+
+  if (overrides.role === 'staff') {
+    if (response.status !== 202) {
+      throw new Error(`staff registration failed: ${response.status} ${JSON.stringify(response.body)}`);
+    }
+
+    const userId = response.body.user.id as string;
+    // Test callers that need an active staff principal bypass the separate
+    // admin account-approval step, then receive a normal test session.
+    await query("UPDATE users SET status = 'active' WHERE id = $1", [userId]);
+    const refresh = await issueRefreshToken(userId, {});
+    return {
+      token: signAccessToken({ id: userId, role: 'staff' }),
+      cookie: `smf_refresh=${refresh.token}`,
+      userId,
+    };
+  }
+
   if (response.status !== 201) {
     throw new Error(`register failed: ${response.status} ${JSON.stringify(response.body)}`);
   }
@@ -62,9 +81,9 @@ export async function login(email: string, password = PASSWORD): Promise<Session
  */
 export async function createAdmin(email = 'admin@test.local'): Promise<Session> {
   const passwordHash = await bcrypt.hash(PASSWORD, 10);
-  const row = await queryOne<{ id: string }>(
-    `INSERT INTO users (email, password_hash, role, full_name)
-     VALUES ($1, $2, 'admin', 'Forensic Admin')
+  await queryOne<{ id: string }>(
+    `INSERT INTO users (email, password_hash, role, full_name, must_change_password)
+     VALUES ($1, $2, 'admin', 'Forensic Admin', false)
      RETURNING id`,
     [email, passwordHash],
   );

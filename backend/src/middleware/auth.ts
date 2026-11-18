@@ -26,12 +26,25 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     const payload = verifyAccessToken(token);
     const parsed = accessPayload.parse(payload);
 
-    const user = await queryOne<{ id: string; email: string; role: Role; full_name: string; status: string }>(
-      'SELECT id, email, role, full_name, status FROM users WHERE id = $1',
+    const user = await queryOne<{
+      id: string;
+      email: string;
+      role: Role;
+      full_name: string;
+      status: string;
+      must_change_password: boolean;
+    }>(
+      'SELECT id, email, role, full_name, status, must_change_password FROM users WHERE id = $1',
       [parsed.sub],
     );
     if (!user) throw unauthorized('Account no longer exists');
     if (user.status !== 'active') throw forbidden('This account is not active');
+    if (
+      user.must_change_password &&
+      !(req.method === 'POST' && req.originalUrl.split('?')[0] === '/api/v1/auth/password/force')
+    ) {
+      throw forbidden('Set a new password before using this account');
+    }
 
     req.user = { id: user.id, email: user.email, role: user.role, fullName: user.full_name };
     next();

@@ -367,25 +367,31 @@ export async function setStaffAccountStatus(
   newStatus: 'active' | 'pending' | 'suspended',
   context: RefreshContext & { requestId?: string },
 ): Promise<void> {
-  const user = await queryOne<{ id: string; role: string; status: string }>(
-    'SELECT id, role, status FROM users WHERE id = $1',
-    [staffUserId],
-  );
-  if (!user) throw notFound('Staff account not found');
-  if (user.role !== 'staff') throw forbidden('This endpoint is for staff accounts only');
-  if (user.status === newStatus) return; // idempotent
+  await withTransaction(async (client) => {
+    const result = await client.query<{ id: string; role: string; status: string }>(
+      'SELECT id, role, status FROM users WHERE id = $1',
+      [staffUserId],
+    );
+    const user = result.rows[0];
+    if (!user) throw notFound('Staff account not found');
+    if (user.role !== 'staff') throw forbidden('This endpoint is for staff accounts only');
+    if (user.status === newStatus) return; // idempotent
 
-  await query('UPDATE users SET status = $2 WHERE id = $1', [staffUserId, newStatus]);
+    await client.query('UPDATE users SET status = $2 WHERE id = $1', [staffUserId, newStatus]);
 
-  await recordAudit({
-    actorUserId: adminId,
-    actorRole: 'admin',
-    action: `auth.staff_account_${newStatus === 'active' ? 'activated' : newStatus === 'suspended' ? 'suspended' : 'pending'}`,
-    entityType: 'user',
-    entityId: staffUserId,
-    detail: { previousStatus: user.status, newStatus },
-    ip: context.ip ?? null,
-    userAgent: context.userAgent ?? null,
-    requestId: context.requestId ?? null,
+    await recordAudit(
+      {
+        actorUserId: adminId,
+        actorRole: 'admin',
+        action: `auth.staff_account_${newStatus === 'active' ? 'activated' : newStatus === 'suspended' ? 'suspended' : 'pending'}`,
+        entityType: 'user',
+        entityId: staffUserId,
+        detail: { previousStatus: user.status, newStatus },
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
+        requestId: context.requestId ?? null,
+      },
+      client,
+    );
   });
 }

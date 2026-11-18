@@ -7,7 +7,7 @@ import { requireAuth, requireRole } from '../../middleware/auth';
 import { authLimiter } from '../../middleware/rateLimit';
 import { clientIp, userAgent } from '../../middleware/requestContext';
 import { validate } from '../../middleware/validate';
-import { changePassword, login, logout, register } from './auth.service';
+import { changePassword, login, logout, register, forceChangePassword } from './auth.service';
 import { rotateRefreshToken, signAccessToken } from './token.service';
 import { getProfileSummary } from '../users/users.service';
 import {
@@ -43,7 +43,9 @@ const registerSchema = z.object({
   password: passwordSchema,
   fullName: z.string().trim().min(2).max(120),
   // Borrowers self-register freely. Staff registration requires a valid invite
-  // code (checked in auth.service.ts). Admin accounts cannot be self-registered.
+  // code (checked in auth.service.ts). Admin accounts cannot be self-registered —
+  // the enum only permits 'borrower' and 'staff'; the backend also rejects 'admin'
+  // explicitly so a crafted request cannot bypass the UI constraint.
   role: z.enum(['borrower', 'staff']),
   inviteCode: z.string().max(128).optional(),
   staffId: z.string().trim().max(80).optional(),
@@ -81,6 +83,10 @@ authRouter.post('/register', authLimiter, validate(registerSchema), async (req, 
     userAgent: userAgent(req),
     requestId: req.requestId,
   });
+  if ('pendingApproval' in result) {
+    res.status(202).json({ status: 'pending_approval', user: result.user });
+    return;
+  }
   setRefreshCookie(res, result.refresh.token, result.refresh.expiresAt);
   res.status(201).json({ user: result.user, accessToken: result.accessToken });
 });
@@ -105,7 +111,7 @@ authRouter.post('/login', authLimiter, validate(loginSchema), async (req, res) =
   }
 
   setRefreshCookie(res, result.refresh.token, result.refresh.expiresAt);
-  res.json({ user: result.user, accessToken: result.accessToken });
+  res.json({ user: result.user, accessToken: result.accessToken, mustChangePassword: result.mustChangePassword ?? false });
 });
 
 authRouter.post('/refresh', async (req, res) => {
@@ -119,8 +125,15 @@ authRouter.post('/refresh', async (req, res) => {
   });
   setRefreshCookie(res, rotated.issue.token, rotated.issue.expiresAt);
 
-  const user = await queryOne<{ id: string; email: string; full_name: string; role: Role; created_at: Date }>(
-    'SELECT id, email, full_name, role, created_at FROM users WHERE id = $1',
+  const user = await queryOne<{
+    id: string;
+    email: string;
+    full_name: string;
+    role: Role;
+    created_at: Date;
+    must_change_password: boolean;
+  }>(
+    'SELECT id, email, full_name, role, created_at, must_change_password FROM users WHERE id = $1',
     [rotated.userId],
   );
   if (!user) throw unauthorized('Account no longer exists');
@@ -128,6 +141,7 @@ authRouter.post('/refresh', async (req, res) => {
   res.json({
     user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role, createdAt: user.created_at },
     accessToken: signAccessToken({ id: user.id, role: user.role }),
+    mustChangePassword: user.must_change_password,
   });
 });
 
@@ -152,6 +166,22 @@ authRouter.patch('/password', requireAuth, validate(changePasswordSchema), async
   });
   clearRefreshCookie(res);
   res.json({ message: 'Password updated. Please sign in again.' });
+});
+
+// Force-change password (for accounts with must_change_password = true).
+// The user must already be authenticated (they got a session but can't
+// reach other routes until they clear this flag).
+authRouter.post('/password/force', requireAuth, validate(
+  z.object({ newPassword: z.string().min(10).max(128).regex(/[A-Za-z]/).regex(/\d/) }),
+), async (req, res) => {
+  const { newPassword } = req.body as { newPassword: string };
+  await forceChangePassword(req.user!.id, newPassword, {
+    ip: clientIp(req),
+    userAgent: userAgent(req),
+    requestId: req.requestId,
+  });
+  clearRefreshCookie(res);
+  res.json({ message: 'Password set. Please sign in again with your new password.' });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { queryOne } from '../src/db/pool';
-import { app, login, PASSWORD, refreshCookie, register, request } from './helpers';
+import { query, queryOne } from '../src/db/pool';
+import { app, authHeader, createAdmin, login, PASSWORD, refreshCookie, register, request } from './helpers';
 
 /**
  * M1 -- authentication.
@@ -36,12 +36,152 @@ describe('authentication', () => {
     expect(cookieHeader).toContain('SameSite=Strict');
   });
 
-  it('refuses to self-register an admin account', async () => {
+  it('refuses to self-register an admin account (role "admin" rejected)', async () => {
     const response = await request(app)
       .post('/api/v1/auth/register')
       .send({ email: 'sneaky@test.local', password: PASSWORD, fullName: 'Sneaky', role: 'admin' });
 
     expect(response.status).toBe(400);
+  });
+
+  it('rejects staff registration with an invalid invite code', async () => {
+    const response = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        email: 'bad-invite@test.local',
+        password: PASSWORD,
+        fullName: 'Bad Invite',
+        role: 'staff',
+        inviteCode: 'not-the-invite-code',
+      });
+
+    expect(response.status).toBe(401);
+    const row = await queryOne<{ id: string }>('SELECT id FROM users WHERE email = $1', ['bad-invite@test.local']);
+    expect(row).toBeNull();
+  });
+
+  it('keeps new staff pending and issues no session until an admin approves the account', async () => {
+    const registration = await request(app)
+      .post('/api/v1/auth/register')
+      .send({
+        email: 'pending-staff@test.local',
+        password: PASSWORD,
+        fullName: 'Pending Staff',
+        role: 'staff',
+        inviteCode: 'smf-staff-invite-change-me',
+      });
+
+    expect(registration.status).toBe(202);
+    expect(registration.body.status).toBe('pending_approval');
+    expect(registration.body.accessToken).toBeUndefined();
+    expect(registration.headers['set-cookie']).toBeUndefined();
+
+    const staffId = registration.body.user.id as string;
+    const row = await queryOne<{ status: string }>('SELECT status FROM users WHERE id = $1', [staffId]);
+    expect(row?.status).toBe('pending');
+
+    const beforeApproval = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'pending-staff@test.local', password: PASSWORD });
+    expect(beforeApproval.status).toBe(401);
+
+    const admin = await createAdmin('approve-pending-staff@test.local');
+    const approval = await request(app)
+      .post(`/api/v1/auth/staff-accounts/${staffId}/status`)
+      .set(...authHeader(admin))
+      .send({ action: 'approve-account' });
+    expect(approval.status).toBe(200);
+
+    const afterApproval = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'pending-staff@test.local', password: PASSWORD });
+    expect(afterApproval.status).toBe(202);
+    expect(afterApproval.body.status).toBe('awaiting_approval');
+  });
+
+  it('the single login endpoint works for all roles and returns the correct role', async () => {
+    // Borrower
+    const borrower = await register('brole@test.local');
+    const borrowerLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'brole@test.local', password: PASSWORD });
+    expect(borrowerLogin.status).toBe(200);
+    expect(borrowerLogin.body.user.role).toBe('borrower');
+    const borrowerLoginAudit = await query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 AND action = 'auth.login'`,
+      [borrower.userId],
+    );
+    expect(borrowerLoginAudit.length).toBeGreaterThan(0);
+
+    // Admin
+    const admin = await createAdmin('arole@test.local');
+    const adminLogin = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'arole@test.local', password: PASSWORD });
+    expect(adminLogin.status).toBe(200);
+    expect(adminLogin.body.user.role).toBe('admin');
+    // must_change_password is false in createAdmin (uses must_change_password=false for tests)
+    expect(typeof adminLogin.body.mustChangePassword).toBe('boolean');
+  });
+
+  it('login returns mustChangePassword=true when the flag is set', async () => {
+    // Insert a user with must_change_password = true
+    const hash = await (await import('bcryptjs')).default.hash(PASSWORD, 10);
+    await (await import('../src/db/pool')).queryOne(
+      `INSERT INTO users (email, password_hash, role, full_name, must_change_password)
+       VALUES ('mcp@test.local', $1, 'admin', 'MCP Admin', true)`,
+      [hash],
+    );
+    const res = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: 'mcp@test.local', password: PASSWORD });
+    expect(res.status).toBe(200);
+    expect(res.body.mustChangePassword).toBe(true);
+
+    const rotated = await request(app)
+      .post('/api/v1/auth/refresh')
+      .set('Cookie', refreshCookie(res));
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.mustChangePassword).toBe(true);
+  });
+
+  it('force-change-password clears the flag and revokes all sessions', async () => {
+    const { queryOne: qOne } = await import('../src/db/pool');
+    const bcryptjs = (await import('bcryptjs')).default;
+    const hash = await bcryptjs.hash(PASSWORD, 10);
+    await qOne(
+      `INSERT INTO users (email, password_hash, role, full_name, must_change_password)
+       VALUES ('fcp@test.local', $1, 'admin', 'FCP Admin', true)`,
+      [hash],
+    );
+    const session = await login('fcp@test.local');
+
+    const blocked = await request(app)
+      .get('/api/v1/auth/me')
+      .set('Authorization', `Bearer ${session.token}`);
+    expect(blocked.status).toBe(403);
+
+    const changed = await request(app)
+      .post('/api/v1/auth/password/force')
+      .set('Authorization', `Bearer ${session.token}`)
+      .send({ newPassword: 'NewForce0rd!' });
+    expect(changed.status).toBe(200);
+
+    // Old cookie is revoked.
+    const stale = await request(app).post('/api/v1/auth/refresh').set('Cookie', session.cookie);
+    expect(stale.status).toBe(401);
+
+    // Flag is cleared.
+    const row = await qOne<{ must_change_password: boolean }>(
+      'SELECT must_change_password FROM users WHERE email = $1',
+      ['fcp@test.local'],
+    );
+    expect(row?.must_change_password).toBe(false);
+    const audit = await query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 AND action = 'auth.forced_password_set'`,
+      [session.userId],
+    );
+    expect(audit.length).toBeGreaterThan(0);
   });
 
   it('rejects a duplicate email with 409', async () => {
@@ -63,7 +203,7 @@ describe('authentication', () => {
   });
 
   it('returns the same generic message for an unknown email and a wrong password', async () => {
-    await register('known@test.local');
+    const known = await register('known@test.local');
 
     const wrongPassword = await request(app)
       .post('/api/v1/auth/login')
@@ -76,6 +216,12 @@ describe('authentication', () => {
     expect(unknownEmail.status).toBe(401);
     expect(wrongPassword.body.error.message).toBe(unknownEmail.body.error.message);
     expect(wrongPassword.body.error.message).toBe('Invalid email or password');
+
+    const actions = await query<{ action: string }>(
+      'SELECT action FROM audit_log WHERE entity_id = $1',
+      [known.userId],
+    );
+    expect(actions.map((entry) => entry.action)).toContain('auth.login_failed');
   });
 
   it('locks the account after too many failed logins, even for the right password', async () => {
@@ -139,6 +285,11 @@ describe('authentication', () => {
       .set(...(['Authorization', `Bearer ${session.token}`] as [string, string]))
       .send({ currentPassword: PASSWORD, newPassword: 'NewPassw0rd!23' });
     expect(changed.status).toBe(200);
+    const audit = await query<{ action: string }>(
+      `SELECT action FROM audit_log WHERE entity_id = $1 AND action = 'auth.password_change'`,
+      [session.userId],
+    );
+    expect(audit.length).toBeGreaterThan(0);
 
     const stale = await request(app).post('/api/v1/auth/refresh').set('Cookie', session.cookie);
     expect(stale.status).toBe(401);

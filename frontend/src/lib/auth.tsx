@@ -31,6 +31,7 @@ interface AuthContextValue {
   status: 'loading' | 'authenticated' | 'anonymous';
   user: SessionUser | null;
   profile: ProfileSummary | null;
+  mustChangePassword: boolean;
   /**
    * Returns normally for borrowers/admins.
    * Returns { awaitingApproval: true, ... } for staff (server 202).
@@ -44,7 +45,7 @@ interface AuthContextValue {
     role: 'borrower' | 'staff';
     inviteCode?: string;
     staffId?: string;
-  }) => Promise<void>;
+  }) => Promise<void | { pendingApproval: true }>;
   /** Call this after the approval poll returns 'approved' to establish the session. */
   applyApprovedSession: (payload: SessionPayload) => Promise<void>;
   logout: () => Promise<void>;
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthContextValue['status']>('loading');
   const [user, setUser] = useState<SessionUser | null>(null);
   const [profile, setProfile] = useState<ProfileSummary | null>(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -75,6 +77,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         if (session) {
           setUser(session.user);
+          setMustChangePassword(session.mustChangePassword === true);
           setStatus('authenticated');
           await loadProfile();
         } else {
@@ -88,9 +91,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   const applySession = useCallback(
-    async (session: SessionPayload) => {
+    async (session: SessionPayload, forceChange = false) => {
       setAccessToken(session.accessToken);
       setUser(session.user);
+      setMustChangePassword(forceChange);
       setStatus('authenticated');
       await loadProfile();
     },
@@ -103,17 +107,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The api() helper only throws on non-2xx, so we need to detect 202
       // by checking the response body shape.
       const raw = await api<
-        | SessionPayload
+        | (SessionPayload & { mustChangePassword?: boolean })
         | { status: 'awaiting_approval'; requestId: string; pollToken: string; expiresAt: string }
       >('/auth/login', { method: 'POST', body: { email, password } });
 
       if ('status' in raw && raw.status === 'awaiting_approval') {
-        // Staff — return the pending object so LoginPage can show the waiting screen.
         return raw as AwaitingApprovalResponse;
       }
 
       // Borrower / Admin — normal session.
-      await applySession(raw as SessionPayload);
+      const sp = raw as SessionPayload & { mustChangePassword?: boolean };
+      await applySession(sp, sp.mustChangePassword === true);
     },
     [applySession],
   );
@@ -135,7 +139,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       inviteCode?: string;
       staffId?: string;
     }) => {
-      const session = await api<SessionPayload>('/auth/register', { method: 'POST', body: input });
+      const session = await api<
+        SessionPayload | { status: 'pending_approval'; user: SessionPayload['user'] }
+      >('/auth/register', { method: 'POST', body: input });
+      if (!('accessToken' in session)) {
+        return { pendingApproval: true as const };
+      }
       await applySession(session);
     },
     [applySession],
@@ -148,13 +157,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccessToken(null);
       setUser(null);
       setProfile(null);
+      setMustChangePassword(false);
       setStatus('anonymous');
     }
   }, []);
 
   const value = useMemo<AuthContextValue>(
-    () => ({ status, user, profile, login, register, applyApprovedSession, logout, refreshProfile: loadProfile }),
-    [status, user, profile, login, register, applyApprovedSession, logout, loadProfile],
+    () => ({ status, user, profile, mustChangePassword, login, register, applyApprovedSession, logout, refreshProfile: loadProfile }),
+    [status, user, profile, mustChangePassword, login, register, applyApprovedSession, logout, loadProfile],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

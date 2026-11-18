@@ -48,9 +48,10 @@ paths:
       summary: Create a borrower or staff account
       description: >
         Borrowers self-register freely. Staff registration requires a valid invite code
-        (STAFF_INVITE_CODE in the server environment). Admin accounts cannot be
-        self-registered; they are provisioned directly in the database.
-        Returns a 15-minute access token and sets an httpOnly refresh cookie.
+        (STAFF_INVITE_CODE in the server environment) and creates a pending account
+        without a session until an admin approves it. Borrowers receive a session
+        immediately. Admin accounts are created through the admin-only user-management
+        endpoint; public registration rejects the admin role.
       security: []
       requestBody:
         required: true
@@ -73,7 +74,7 @@ paths:
                 staffId: { type: string, description: Optional staff identifier }
       responses:
         '201':
-          description: Account created
+          description: Borrower account created and signed in
           headers:
             Set-Cookie:
               description: smf_refresh — httpOnly, SameSite=Strict, Path=/api/v1/auth
@@ -81,7 +82,18 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Session' }
+        '202':
+          description: Staff account created and awaiting admin approval; no session is issued
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, user]
+                properties:
+                  status: { type: string, enum: [pending_approval] }
+                  user: { $ref: '#/components/schemas/PublicUser' }
         '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
         '409':
           description: Email already registered
           content:

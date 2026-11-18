@@ -6,7 +6,6 @@ import { recordAudit } from '../audit/audit.service';
 import type { Role } from '../../types/express';
 import {
   issueRefreshToken,
-  revokeAllSessions,
   signAccessToken,
   type RefreshContext,
   type RefreshIssue,
@@ -28,7 +27,7 @@ export interface RegisterInput {
   email: string;
   password: string;
   fullName: string;
-  /** Public registration creates borrowers; staff registration requires a valid invite code. */
+  /** Public registration creates borrowers or staff only. Admin is never allowed here. */
   role: 'borrower' | 'staff';
   /** Required when role === 'staff'. Must match STAFF_INVITE_CODE. */
   inviteCode?: string;
@@ -40,6 +39,8 @@ export interface AuthResult {
   user: PublicUser;
   accessToken: string;
   refresh: RefreshIssue;
+  /** When true the client must redirect to /auth/set-password before anything else. */
+  mustChangePassword?: boolean;
 }
 
 /** Returned instead of AuthResult when a staff login needs admin approval. */
@@ -48,6 +49,11 @@ export interface StaffApprovalPending {
   requestId: string;
   pollToken: string;
   expiresAt: string; // ISO
+}
+
+export interface StaffRegistrationPending {
+  pendingApproval: true;
+  user: PublicUser;
 }
 
 export interface PublicUser {
@@ -72,7 +78,10 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-export async function register(input: RegisterInput, context: RefreshContext & { requestId?: string }): Promise<AuthResult> {
+export async function register(
+  input: RegisterInput,
+  context: RefreshContext & { requestId?: string },
+): Promise<AuthResult | StaffRegistrationPending> {
   const email = normalizeEmail(input.email);
   const existing = await queryOne<{ id: string }>('SELECT id FROM users WHERE email = $1', [email]);
   if (existing) throw conflict('An account with that email already exists');
@@ -90,10 +99,10 @@ export async function register(input: RegisterInput, context: RefreshContext & {
 
   const user = await withTransaction(async (client) => {
     const inserted = await client.query<{ id: string; email: string; full_name: string; role: Role; created_at: Date }>(
-      `INSERT INTO users (email, password_hash, role, full_name)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO users (email, password_hash, role, full_name, status)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, email, full_name, role, created_at`,
-      [email, passwordHash, input.role, input.fullName],
+      [email, passwordHash, input.role, input.fullName, input.role === 'staff' ? 'pending' : 'active'],
     );
     const created = inserted.rows[0];
 
@@ -128,6 +137,10 @@ export async function register(input: RegisterInput, context: RefreshContext & {
     return created;
   });
 
+  if (input.role === 'staff') {
+    return { pendingApproval: true, user: toPublicUser(user) };
+  }
+
   const refresh = await issueRefreshToken(user.id, context);
   return {
     user: toPublicUser(user),
@@ -152,6 +165,7 @@ export async function login(
     failed_attempts: number;
     locked_until: Date | null;
     created_at: Date;
+    must_change_password: boolean;
   }>('SELECT * FROM users WHERE email = $1', [email]);
 
   // Constant-ish work regardless of whether the account exists.
@@ -222,8 +236,6 @@ export async function login(
       [row.id],
     );
 
-    await auditFailure('staff_awaiting_approval'); // audit the attempt even when pending
-    // Overwrite the 'failed' action with the real one.
     await recordAudit({
       actorUserId: row.id,
       actorRole: row.role,
@@ -266,7 +278,53 @@ export async function login(
     user: toPublicUser(row),
     accessToken: signAccessToken({ id: row.id, role: row.role }),
     refresh,
+    mustChangePassword: row.must_change_password === true,
   };
+}
+
+/**
+ * Force-changes the password for a user who must_change_password = true.
+ * Clears the flag and revokes all existing sessions so only the new password works.
+ */
+export async function forceChangePassword(
+  userId: string,
+  newPassword: string,
+  context: RefreshContext & { requestId?: string },
+): Promise<void> {
+  const row = await queryOne<{ role: Role; must_change_password: boolean }>(
+    'SELECT role, must_change_password FROM users WHERE id = $1',
+    [userId],
+  );
+  if (!row) throw unauthorized('Account not found');
+  if (!row.must_change_password) throw unauthorized('Password change not required for this account');
+
+  const hash = await bcrypt.hash(newPassword, config.BCRYPT_COST);
+  await withTransaction(async (client) => {
+    const updated = await client.query(
+      'UPDATE users SET password_hash = $2, must_change_password = false WHERE id = $1 AND must_change_password = true',
+      [userId, hash],
+    );
+    if (updated.rowCount !== 1) throw unauthorized('Password change not required for this account');
+
+    await client.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [
+      userId,
+    ]);
+
+    await recordAudit(
+      {
+        actorUserId: userId,
+        actorRole: row.role,
+        action: 'auth.forced_password_set',
+        entityType: 'user',
+        entityId: userId,
+        detail: { sessionsRevoked: true },
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
+        requestId: context.requestId ?? null,
+      },
+      client,
+    );
+  });
 }
 
 export async function changePassword(
@@ -298,19 +356,32 @@ export async function changePassword(
   }
 
   const hash = await bcrypt.hash(newPassword, config.BCRYPT_COST);
-  await query('UPDATE users SET password_hash = $2 WHERE id = $1', [userId, hash]);
-  await revokeAllSessions(userId);
+  await withTransaction(async (client) => {
+    const updated = await client.query('UPDATE users SET password_hash = $2 WHERE id = $1 AND password_hash = $3', [
+      userId,
+      hash,
+      row.password_hash,
+    ]);
+    if (updated.rowCount !== 1) throw unauthorized('Current password is incorrect');
 
-  await recordAudit({
-    actorUserId: userId,
-    actorRole: row.role,
-    action: 'auth.password_change',
-    entityType: 'user',
-    entityId: userId,
-    detail: { sessionsRevoked: true },
-    ip: context.ip ?? null,
-    userAgent: context.userAgent ?? null,
-    requestId: context.requestId ?? null,
+    await client.query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [
+      userId,
+    ]);
+
+    await recordAudit(
+      {
+        actorUserId: userId,
+        actorRole: row.role,
+        action: 'auth.password_change',
+        entityType: 'user',
+        entityId: userId,
+        detail: { sessionsRevoked: true },
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
+        requestId: context.requestId ?? null,
+      },
+      client,
+    );
   });
 }
 

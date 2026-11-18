@@ -19,6 +19,7 @@ import { ledgerRouter } from './modules/ledger/ledger.routes';
 import { scoringRouter } from './modules/scoring/scoring.routes';
 import { fraudRouter } from './modules/fraud/fraud.routes';
 import { auditRouter } from './modules/audit/audit.routes';
+import { adminRouter } from './modules/admin/admin.routes';
 
 /**
  * Express application factory.
@@ -115,6 +116,7 @@ export function createApp(): express.Express {
   app.use('/api/v1', scoringRouter);
   app.use('/api/v1', fraudRouter);
   app.use('/api/v1', auditRouter);
+  app.use('/api/v1/admin', adminRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

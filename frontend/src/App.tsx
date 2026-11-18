@@ -19,12 +19,16 @@ import { AuditLogPage } from './pages/admin/AuditLogPage';
 import { TimelinePage } from './pages/admin/TimelinePage';
 import { IntegrityPage } from './pages/admin/IntegrityPage';
 import { AccessRequestsPage } from './pages/admin/AccessRequestsPage';
+import { SetPasswordPage } from './pages/auth/SetPasswordPage';
+import { AdminsPage } from './pages/admin/AdminsPage';
 
 /** Blocks the app until the session is known; redirects anonymous users. */
-function RequireAuth({ children }: { children: ReactNode }) {
-  const { status } = useAuth();
+function RequireAuth({ children, allowPasswordChange = false }: { children: ReactNode; allowPasswordChange?: boolean }) {
+  const { status, user, mustChangePassword } = useAuth();
   if (status === 'loading') return <FullPageLoader />;
   if (status !== 'authenticated') return <Navigate to="/login" replace />;
+  if (mustChangePassword && !allowPasswordChange) return <Navigate to="/set-password" replace />;
+  if (!mustChangePassword && allowPasswordChange && user) return <Navigate to={homeFor(user.role)} replace />;
   return <>{children}</>;
 }
 
@@ -38,9 +42,10 @@ function RequireRole({ role, children }: { role: 'borrower' | 'staff' | 'admin';
 }
 
 function RootRedirect() {
-  const { status, user } = useAuth();
+  const { status, user, mustChangePassword } = useAuth();
   if (status === 'loading') return <FullPageLoader />;
   if (status === 'anonymous' || !user) return <Navigate to="/login" replace />;
+  if (mustChangePassword) return <Navigate to="/set-password" replace />;
   return <Navigate to={homeFor(user.role)} replace />;
 }
 
@@ -50,6 +55,14 @@ export default function App() {
       <Route path="/" element={<RootRedirect />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route
+        path="/set-password"
+        element={
+          <RequireAuth allowPasswordChange>
+            <SetPasswordPage />
+          </RequireAuth>
+        }
+      />
 
       <Route
         element={
@@ -163,6 +176,14 @@ export default function App() {
           element={
             <RequireRole role="admin">
               <AccessRequestsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/admin/admins"
+          element={
+            <RequireRole role="admin">
+              <AdminsPage />
             </RequireRole>
           }
         />

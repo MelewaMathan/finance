@@ -5,28 +5,52 @@ import { recordAudit } from '../modules/audit/audit.service';
 import { pool, withTransaction } from './pool';
 
 /**
- * Demo seed data.
+ * Seed data.
  *
- * Every account uses the password from DEMO_SEED_PASSWORD (required).
- * The admin account is created here rather than through /auth/register
- * on purpose: the public API can only create borrowers and staff, so an
- * admin must be provisioned by an administrator.
+ * Section A — first admin account (always runs, idempotent).
+ *   Email:    SEED_ADMIN_EMAIL    (default: admin@smf.com  — dev/test only)
+ *   Password: SEED_ADMIN_PASSWORD (default: ADMINadmin123  — dev/test only)
+ *   In production both env vars MUST be set explicitly; the defaults are
+ *   refused.  must_change_password is set to true so the default password
+ *   is replaced before the account is used for real.
  *
- * Safety guards:
- *  - Refuses to run when NODE_ENV=production unless ALLOW_DEMO_SEED=true.
- *  - Requires DEMO_SEED_PASSWORD to be set explicitly in the environment.
+ * Section B — demo accounts (borrowers + staff).
+ *   Only seeded when ALLOW_DEMO_SEED=true (never in production by default).
+ *   Requires DEMO_SEED_PASSWORD to be set.
+ *
+ * Safety rules:
+ *  - Running the seed again never resets an existing account's password.
+ *  - Passwords are never logged or returned in any response.
+ *  - Every creation is written to the audit chain.
  */
 
 const IS_PRODUCTION = config.NODE_ENV === 'production';
 const ALLOW_DEMO_SEED = process.env.ALLOW_DEMO_SEED === 'true';
 const DEMO_SEED_PASSWORD = process.env.DEMO_SEED_PASSWORD;
 
-export const DEMO_PASSWORD = DEMO_SEED_PASSWORD ?? 'UNSET';
+// Admin seed credentials.
+const DEFAULT_ADMIN_EMAIL = 'admin@smf.com';
+const DEFAULT_ADMIN_PASSWORD = 'ADMINadmin123';
 
-interface SeedPerson {
+const SEED_ADMIN_EMAIL: string = (() => {
+  if (config.SEED_ADMIN_EMAIL) return config.SEED_ADMIN_EMAIL;
+  if (IS_PRODUCTION) throw new Error('[seed] SEED_ADMIN_EMAIL must be set in production');
+  return DEFAULT_ADMIN_EMAIL;
+})();
+
+const SEED_ADMIN_PASSWORD_VALUE: string = (() => {
+  if (config.SEED_ADMIN_PASSWORD) return config.SEED_ADMIN_PASSWORD;
+  if (IS_PRODUCTION) throw new Error('[seed] SEED_ADMIN_PASSWORD must be set in production');
+  return DEFAULT_ADMIN_PASSWORD;
+})();
+
+// ---------------------------------------------------------------------------
+// Demo people (borrowers + staff only — no admin in this list)
+// ---------------------------------------------------------------------------
+interface DemoPerson {
   email: string;
   fullName: string;
-  role: 'borrower' | 'staff' | 'admin';
+  role: 'borrower' | 'staff';
   staffId?: string;
   profile?: {
     nationalId?: string;
@@ -38,7 +62,7 @@ interface SeedPerson {
   };
 }
 
-export const demoPeople: SeedPerson[] = [
+export const demoPeople: DemoPerson[] = [
   {
     email: 'staff@smf.demo',
     fullName: 'Amani Kariuki',
@@ -59,8 +83,6 @@ export const demoPeople: SeedPerson[] = [
     },
   },
   {
-    // Second borrower whose phone number collides with the first one -- the
-    // fraud module should flag it as an identity inconsistency.
     email: 'borrower2@smf.demo',
     fullName: 'Peter Otieno',
     role: 'borrower',
@@ -73,19 +95,65 @@ export const demoPeople: SeedPerson[] = [
       monthlyIncomeCents: 3000000,
     },
   },
-  {
-    email: 'admin@smf.demo',
-    fullName: 'Forensic Desk',
-    role: 'admin',
-  },
 ];
 
-async function upsertPerson(person: SeedPerson, passwordHash: string): Promise<string> {
-  return withTransaction(async (client) => {
+// ---------------------------------------------------------------------------
+// Admin seeding — always idempotent, never resets passwords
+// ---------------------------------------------------------------------------
+async function seedAdmin(): Promise<void> {
+  const email = SEED_ADMIN_EMAIL.trim().toLowerCase();
+
+  const existing = await pool.query<{ id: string; role: string }>(
+    'SELECT id, role FROM users WHERE email = $1',
+    [email],
+  );
+  if (existing.rowCount) {
+    if (existing.rows[0].role !== 'admin') {
+      throw new Error(`[seed] SEED_ADMIN_EMAIL ${email} is already assigned to a non-admin account`);
+    }
+    console.log(`[seed] admin ${email} already exists — skipping`);
+    return;
+  }
+
+  const passwordHash = await bcrypt.hash(SEED_ADMIN_PASSWORD_VALUE, config.BCRYPT_COST);
+
+  await withTransaction(async (client) => {
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO users (email, password_hash, role, full_name, status, must_change_password)
+       VALUES ($1, $2, 'admin', 'Platform Admin', 'active', true)
+       RETURNING id`,
+      [email, passwordHash],
+    );
+    const userId = inserted.rows[0].id;
+
+    await recordAudit(
+      {
+        actorUserId: userId,
+        actorRole: 'admin',
+        action: 'seed.admin_created',
+        entityType: 'user',
+        entityId: userId,
+        detail: { email, note: 'First admin seeded' },
+        ip: null,
+        userAgent: 'seed-script',
+        requestId: null,
+      },
+      client,
+    );
+  });
+
+  console.log(`[seed] created admin ${email} (must_change_password = true)`);
+}
+
+// ---------------------------------------------------------------------------
+// Demo account seeding
+// ---------------------------------------------------------------------------
+async function upsertDemoPerson(person: DemoPerson, passwordHash: string): Promise<void> {
+  await withTransaction(async (client) => {
     const existing = await client.query<{ id: string }>('SELECT id FROM users WHERE email = $1', [person.email]);
     if (existing.rowCount) {
       console.log(`[seed] ${person.email} already exists`);
-      return existing.rows[0].id;
+      return;
     }
 
     const inserted = await client.query<{ id: string }>(
@@ -141,17 +209,25 @@ async function upsertPerson(person: SeedPerson, passwordHash: string): Promise<s
     );
 
     console.log(`[seed] created ${person.role} ${person.email}`);
-    return userId;
   });
 }
 
+// ---------------------------------------------------------------------------
+// Main entry point
+// ---------------------------------------------------------------------------
 export async function seed(): Promise<void> {
-  if (IS_PRODUCTION && !ALLOW_DEMO_SEED) {
-    throw new Error(
-      '[seed] Refusing to seed demo accounts in production. ' +
-        'Set ALLOW_DEMO_SEED=true to override — only do this for a live demo environment, ' +
-        'and change or delete these accounts before using real borrower data.',
-    );
+  // Always seed the first admin.
+  await seedAdmin();
+
+  // Demo accounts are optional and refused in production unless explicitly
+  // allowed.
+  if (!ALLOW_DEMO_SEED) {
+    if (IS_PRODUCTION) {
+      console.log('[seed] Demo accounts skipped (production). Set ALLOW_DEMO_SEED=true to include them.');
+    } else {
+      console.log('[seed] Demo accounts skipped. Set ALLOW_DEMO_SEED=true to include them.');
+    }
+    return;
   }
 
   if (!DEMO_SEED_PASSWORD) {
@@ -163,9 +239,9 @@ export async function seed(): Promise<void> {
 
   const passwordHash = await bcrypt.hash(DEMO_SEED_PASSWORD, config.BCRYPT_COST);
   for (const person of demoPeople) {
-    await upsertPerson(person, passwordHash);
+    await upsertDemoPerson(person, passwordHash);
   }
-  console.log(`\n[seed] demo password for every account: ${DEMO_SEED_PASSWORD}`);
+  console.log('\n[seed] demo accounts created or already present');
 }
 
 if (require.main === module) {
