@@ -28,7 +28,7 @@ Three systemd units on one host (`smf-api`, `smf-ml`), nginx in front, database 
 | --- | --- | --- |
 | Host | Ubuntu 24.04 LTS, `t3.small` (2 vCPU / 2 GB) | Node + Python + nginx on one box; the ML model is small |
 | Database | RDS PostgreSQL 16, `db.t4g.micro`, private subnet | Off-host by default; encryption and backups managed |
-| Domain | `finance.example.com` | Put your own in `WEB_ORIGIN`, the cookie, and CORS |
+| Domain | `finance.example.com` | Put your own in `CORS_ORIGINS` and configure the cookie/API host |
 | Chain | Polygon Amoy (testnet, chain id 80002) | Free gas; `chainId` is checked against the network |
 | Region | `eu-west-1` in the examples | Change consistently |
 
@@ -107,7 +107,8 @@ Fill in `.env`. The values that differ from the template:
 NODE_ENV=production
 API_PORT=4000
 API_BASE_URL=https://finance.example.com
-WEB_ORIGIN=https://finance.example.com
+CORS_ORIGINS=https://finance.example.com
+ALLOW_VERCEL_PREVIEWS=false
 
 DATABASE_URL=postgresql://smf_app:<app-password>@smf-db.abc123.eu-west-1.rds.amazonaws.com:5432/secure_microfinance?sslmode=require
 
@@ -128,10 +129,13 @@ REPORT_STORAGE_DIR=/var/lib/smf/reports
 
 Notes that matter:
 
-* `WEB_ORIGIN` has to be the **exact** browser origin. It drives CORS and it is the only origin the API
-  will answer. A trailing slash will break it.
-* Under `NODE_ENV=production` the refresh cookie is `Secure`, so **HTTPS is mandatory** — over plain HTTP
-  the browser silently drops the cookie and every login "works" and then expires immediately.
+* `CORS_ORIGINS` is a comma-separated list of **exact** browser origins, with no trailing slash or
+  wildcard. `ALLOW_VERCEL_PREVIEWS=true` optionally allows only
+  `https://finance-<id>-rotichmathan-4403.vercel.app`; it defaults to false.
+* Under `NODE_ENV=production` the refresh cookie is `Secure; SameSite=Strict`, so **HTTPS is mandatory**.
+  The Vercel `/api` rewrite keeps browser requests same-origin and works with this cookie. If the frontend
+  calls the Render API directly across domains, the Strict cookie will not be sent; prefer the Vercel proxy
+  or a same-site custom domain rather than weakening the cookie policy.
 * `FIELD_ENCRYPTION_KEY` and `BLIND_INDEX_KEY` are unrecoverable. Back them up separately from the
   database (a password manager or Secrets Manager), never in the same place as a `pg_dump`.
 * The API validates this file at boot and refuses to start on a bad value. That is intended: a
@@ -456,7 +460,7 @@ tar -xzf /var/backups/smf-files-2026-11-01.tar.gz -C /tmp/smf-restore
 | 1 | `.env` is `600` and not in git | `stat -c '%a' .env`; `git check-ignore .env` |
 | 2 | Four independent 32-byte secrets | `grep -E 'SECRET\|KEY' .env` — no repeats, no placeholders |
 | 3 | `NODE_ENV=production` | Cookie is `Secure`; check `Set-Cookie` in devtools |
-| 4 | `WEB_ORIGIN` is the https origin | A request from another origin is rejected |
+| 4 | `CORS_ORIGINS` lists exact https origins | A request from another origin is rejected |
 | 5 | HTTPS only, HSTS on | `curl -I http://…` redirects; `strict-transport-security` present |
 | 6 | RDS is not publicly accessible | `sslmode=require` and a private security group |
 | 7 | App login has no DDL rights | `psql` as `smf_app`: `DROP TABLE audit_log;` must fail |
@@ -473,7 +477,7 @@ Shorter path, if you accept containers:
 
 ```bash
 cp .env.example .env      # same values as §6, except DATABASE_URL can point at the compose postgres
-export PUBLIC_WEB_ORIGIN=https://finance.example.com
+export PUBLIC_CORS_ORIGINS=https://finance.example.com
 docker compose up -d --build
 docker compose ps
 curl -s http://127.0.0.1:4000/api/health
@@ -487,8 +491,8 @@ What the compose file does for you:
 * `storage:/data` holds agreements and exports; `REPORT_STORAGE_DIR=/data/reports` inside the image. Keep
   that volume — it is the signed evidence.
 * `web` is nginx serving the built SPA and proxying `/api` to `api:4000`, so the browser sees one origin.
-* `WEB_ORIGIN` comes from `PUBLIC_WEB_ORIGIN`, not from `WEB_ORIGIN`, because compose interpolates `.env`
-  automatically and `.env` normally still holds the dev value.
+* `CORS_ORIGINS` comes from `PUBLIC_CORS_ORIGINS`, not the local-development value in `.env`, because
+  Compose overlays that variable for the web container's public origin.
 
 To use RDS instead of the bundled `postgres` service, delete that service and set `DATABASE_URL` in `.env`
 to the RDS URL. The API waits for nothing in that case, so check `/api/health` yourself.
@@ -508,8 +512,8 @@ to the RDS URL. The API waits for nothing in that case, so check `/api/health` y
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | API exits at boot with `Invalid environment configuration` | A missing/invalid `.env` value (the message names the field) | Fix the field; keys must be 64 hex chars |
-| Login "succeeds" then the session vanishes | Cookie is `Secure` on plain HTTP, or `WEB_ORIGIN` mismatch | Serve over HTTPS; correct `WEB_ORIGIN` |
-| `CORS: Origin not allowed` | Origin is not in the allow-list | Update `WEB_ORIGIN`; the allow-list also accepts `localhost:5173` for dev |
+| Login "succeeds" then the session vanishes | Cookie is `Secure` on plain HTTP, CORS mismatch, or the frontend calls the API directly across sites | Serve over HTTPS; correct `CORS_ORIGINS`; keep Vercel `/api` requests on the same-origin rewrite |
+| `CORS: Origin not allowed` | Origin is not in the allow-list | Add the exact origin to `CORS_ORIGINS`; localhost dev origins are also allowed outside production |
 | `503 CHAIN_UNAVAILABLE` | `LEDGER_CONTRACT_ADDRESS` empty or `CHAIN_MODE=off` | Complete §7 and restart |
 | Every recent payment shows `unanchored` | Chain unreachable when the payment cleared | `GET /api/v1/ledger/status`; anchor later — the record is still valid |
 | Approvals fail with `500` | `ProtectSystem=strict` without `ReadWritePaths=/var/lib/smf` | Add the path, `daemon-reload`, restart |

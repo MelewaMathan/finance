@@ -41,10 +41,12 @@ services:
           name: smf-db
           property: connectionString
 
-      # Must be the exact Vercel origin, or CORS rejects the proxied request:
+      # Comma-separated exact browser origins; no wildcard matching:
       # https://finance-amber-three-78.vercel.app
-      - key: WEB_ORIGIN
+      - key: CORS_ORIGINS
         sync: false
+      - key: ALLOW_VERCEL_PREVIEWS
+        value: 'false'
 
       # Any 16+ char string; generated once and kept by Render.
       - key: JWT_ACCESS_SECRET

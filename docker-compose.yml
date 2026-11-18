@@ -31,10 +31,8 @@ services:
       API_PORT: '4000'
       DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/secure_microfinance
       # Inside compose the browser talks to the web container, not to :5173.
-      # Deliberately not ${WEB_ORIGIN}: that variable is usually still the dev
-      # value in .env, and compose interpolates from .env automatically -- using
-      # it here would make the API reject the :8080 origin.
-      WEB_ORIGIN: ${PUBLIC_WEB_ORIGIN:-http://localhost:8080}
+      CORS_ORIGINS: ${PUBLIC_CORS_ORIGINS:-http://localhost:8080}
+      ALLOW_VERCEL_PREVIEWS: ${ALLOW_VERCEL_PREVIEWS:-false}
     depends_on:
       postgres:
         condition: service_healthy

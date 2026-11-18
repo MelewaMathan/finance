@@ -31,7 +31,11 @@ const schema = z.object({
   // that port, so it wins over the local default. API_PORT still overrides it
   // when set explicitly.
   API_PORT: z.coerce.number().int().positive().default(Number(process.env.PORT) || 4000),
-  WEB_ORIGIN: z.string().default('http://localhost:5173'),
+  CORS_ORIGINS: z.string().default(''),
+  ALLOW_VERCEL_PREVIEWS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
 
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
