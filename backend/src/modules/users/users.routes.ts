@@ -5,7 +5,6 @@ import {
   encryptField,
   nationalIdBlindIndex,
   normalizeNationalId,
-  normalizePhone,
   phoneBlindIndex,
 } from '../../lib/crypto';
 import { badRequest, forbidden } from '../../lib/errors';
@@ -24,9 +23,25 @@ import { getProfileSummary } from './users.service';
  * duplicate identity across accounts without decrypting anything.
  */
 const updateSchema = z.object({
-  nationalId: z.string().trim().min(5).max(32).optional(),
-  phone: z.string().trim().min(9).max(20).optional(),
-  occupation: z.string().trim().max(80).optional(),
+  nationalId: z
+    .string()
+    .trim()
+    .refine((value) => value === '' || /^\d{7,9}$/.test(value), 'must be 7 to 9 digits')
+    .optional(),
+  phone: z
+    .string()
+    .trim()
+    .max(24)
+    .refine((value) => value === '' || normalizeKenyanMobilePhone(value) !== null, 'enter a valid Kenyan mobile number')
+    .optional(),
+  occupation: z
+    .string()
+    .trim()
+    .max(80)
+    .refine((value) => value === '' || value.length >= 2, 'must be at least 2 characters')
+    .optional(),
+  // Zero is accepted as an explicit clear operation. A positive value is
+  // required for profile completeness and is stored in cents.
   monthlyIncomeCents: z.number().int().min(0).max(1_000_000_000).optional(),
   dateOfBirth: z
     .string()
@@ -34,6 +49,20 @@ const updateSchema = z.object({
     .optional(),
   address: z.string().trim().max(200).optional(),
 });
+
+function normalizeKenyanMobilePhone(value: string): string | null {
+  const trimmed = value.trim();
+  if (!/^\+?[\d -]+$/.test(trimmed)) return null;
+
+  const digits = trimmed.replace(/\D/g, '');
+  const national = digits.startsWith('254')
+    ? digits.slice(3)
+    : digits.startsWith('0')
+      ? digits.slice(1)
+      : digits;
+  if (!/^[71]\d{8}$/.test(national)) return null;
+  return `+254${national}`;
+}
 
 export const usersRouter = Router();
 
@@ -53,43 +82,51 @@ usersRouter.put('/profile', requireAuth, denyAuditorWrites, limitWrites, validat
   // is ever interpolated into SQL.
   const sets: string[] = [];
   const values: unknown[] = [];
-  const auditDetail: Record<string, unknown> = {};
+  const changedFields: string[] = [];
 
   const push = (column: string, value: unknown) => {
     values.push(value);
     sets.push(`${column} = $${values.length}`);
   };
 
-  if (body.nationalId) {
-    const normalized = normalizeNationalId(body.nationalId);
-    push('national_id_enc', encryptField(body.nationalId));
-    push('national_id_bi', nationalIdBlindIndex(body.nationalId));
-    auditDetail.nationalIdUpdated = true;
-    // Flag duplicates across accounts (fraud module owns the flag itself).
-    await detectIdentityConflicts({ userId: req.user!.id, nationalIdBi: nationalIdBlindIndex(body.nationalId) });
-    if (!normalized) throw badRequest('National ID is not usable');
+  if (body.nationalId !== undefined) {
+    const nationalId = body.nationalId === '' ? null : normalizeNationalId(body.nationalId);
+    push('national_id_enc', nationalId ? encryptField(nationalId) : null);
+    push('national_id_bi', nationalId ? nationalIdBlindIndex(nationalId) : null);
+    changedFields.push('nationalId');
+    if (nationalId) {
+      // Flag duplicates across accounts (fraud module owns the flag itself).
+      await detectIdentityConflicts({
+        userId: req.user!.id,
+        nationalIdBi: nationalIdBlindIndex(nationalId),
+      });
+    }
   }
-  if (body.phone) {
-    push('phone_enc', encryptField(normalizePhone(body.phone)));
-    push('phone_bi', phoneBlindIndex(body.phone));
-    auditDetail.phoneUpdated = true;
-    await detectIdentityConflicts({ userId: req.user!.id, phoneBi: phoneBlindIndex(body.phone) });
+  if (body.phone !== undefined) {
+    const phone = body.phone === '' ? null : normalizeKenyanMobilePhone(body.phone);
+    if (body.phone !== '' && !phone) throw badRequest('Enter a valid Kenyan mobile number');
+    push('phone_enc', phone ? encryptField(phone) : null);
+    push('phone_bi', phone ? phoneBlindIndex(phone) : null);
+    changedFields.push('phone');
+    if (phone) {
+      await detectIdentityConflicts({ userId: req.user!.id, phoneBi: phoneBlindIndex(phone) });
+    }
   }
   if (body.occupation !== undefined) {
-    push('occupation', body.occupation);
-    auditDetail.occupationUpdated = true;
+    push('occupation', body.occupation || null);
+    changedFields.push('occupation');
   }
   if (body.monthlyIncomeCents !== undefined) {
-    push('monthly_income_cents', body.monthlyIncomeCents);
-    auditDetail.monthlyIncomeUpdated = true;
+    push('monthly_income_cents', body.monthlyIncomeCents || null);
+    changedFields.push('monthlyIncomeCents');
   }
   if (body.dateOfBirth) {
     push('date_of_birth_enc', encryptField(body.dateOfBirth));
-    auditDetail.dateOfBirthUpdated = true;
+    changedFields.push('dateOfBirth');
   }
   if (body.address) {
     push('address_enc', encryptField(body.address));
-    auditDetail.addressUpdated = true;
+    changedFields.push('address');
   }
 
   if (sets.length === 0) throw badRequest('No profile fields supplied');
@@ -100,7 +137,7 @@ usersRouter.put('/profile', requireAuth, denyAuditorWrites, limitWrites, validat
     values,
   );
 
-  await auditRequest(req, 'profile.update', 'borrower_profile', req.user!.id, auditDetail);
+  await auditRequest(req, 'profile.update', 'borrower_profile', req.user!.id, { changedFields });
 
   const profile = await getProfileSummary(req.user!.id);
   res.json({ profile, message: 'Profile updated' });

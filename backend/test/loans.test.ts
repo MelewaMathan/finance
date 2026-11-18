@@ -83,15 +83,61 @@ describe('loans', () => {
     expect(loan.borrower.id).toBe(borrower.userId);
   });
 
-  it('refuses applications from lenders and from incomplete profiles', async () => {
+  it('refuses applications from lenders', async () => {
     const lenderSession = await lender();
     const lenderAttempt = await applyLoan(lenderSession, lenderSession.userId);
     expect(lenderAttempt.status).toBe(403);
+  });
 
-    const bare = await register('bare@loans.test', { role: 'borrower' });
-    const incomplete = await applyLoan(bare, lenderSession.userId);
-    expect(incomplete.status).toBe(422);
-    expect(incomplete.body.error.message).toMatch(/profile/i);
+  it.each([
+    ['nationalId', { nationalId: '' }],
+    ['phone', { phone: '' }],
+    ['occupation', { occupation: '' }],
+    ['monthlyIncomeCents', { monthlyIncomeCents: 0 }],
+  ])('blocks applications when %s is missing before validating or scoring', async (field, clearedField) => {
+    const borrower = await borrowerWithProfile(`missing-${field}@loans.test`);
+    const update = await request(app)
+      .put('/api/v1/me/profile')
+      .set(...authHeader(borrower))
+      .send(clearedField);
+    expect(update.status).toBe(200);
+
+    const response = await request(app)
+      .post('/api/v1/loans')
+      .set(...authHeader(borrower))
+      .send({});
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({
+      code: 'PROFILE_INCOMPLETE',
+      message: 'Complete your profile before applying for a loan.',
+      missing: [field],
+    });
+    expect(
+      await query('SELECT id FROM loans WHERE borrower_id = $1', [borrower.userId]),
+    ).toHaveLength(0);
+    expect(
+      await query('SELECT id FROM credit_scores WHERE loan_id IN (SELECT id FROM loans WHERE borrower_id = $1)', [
+        borrower.userId,
+      ]),
+    ).toHaveLength(0);
+
+    const blockedAudit = await query<{ detail: { missing: string[] } }>(
+      "SELECT detail FROM audit_log WHERE action = 'loan.application_blocked'",
+    );
+    expect(blockedAudit).toHaveLength(1);
+    expect(blockedAudit[0].detail.missing).toEqual([field]);
+  });
+
+  it('rejects staff and admins from creating borrower loan applications', async () => {
+    const lenderSession = await lender();
+    const admin = await createAdmin('admin-loan-attempt@loans.test');
+    const staffAttempt = await applyLoan(lenderSession, lenderSession.userId);
+    const adminAttempt = await applyLoan(admin, lenderSession.userId);
+
+    expect(staffAttempt.status).toBe(403);
+    expect(adminAttempt.status).toBe(403);
+    expect(await query('SELECT id FROM loans')).toHaveLength(0);
   });
 
   it('enforces the lender maximum principal', async () => {

@@ -216,7 +216,11 @@ paths:
       description: >
         National ID and phone are encrypted with AES-256-GCM and blind-indexed
         (HMAC-SHA256) so duplicate identities can be detected without
-        decryption. Auditors are read-only; lenders have no borrower profile.
+        decryption. National IDs must contain 7 to 9 digits. Kenyan mobile
+        numbers are stored in +2547XXXXXXXX or +2541XXXXXXXX form. Empty
+        nationalId, phone, or occupation values clear those fields; setting
+        monthlyIncomeCents to zero clears income. Auditors are read-only;
+        lenders have no borrower profile.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -225,10 +229,10 @@ paths:
             schema:
               type: object
               properties:
-                nationalId: { type: string, minLength: 5, maxLength: 32, example: '23456789' }
-                phone: { type: string, minLength: 9, maxLength: 20, example: '0712 345 678' }
-                occupation: { type: string, maxLength: 80, example: Tailor }
-                monthlyIncomeCents: { type: integer, minimum: 0, example: 4200000 }
+                nationalId: { type: string, pattern: '^\d{7,9}$', example: '23456789' }
+                phone: { type: string, maxLength: 24, example: '0712 345 678' }
+                occupation: { type: string, minLength: 2, maxLength: 80, example: Tailor }
+                monthlyIncomeCents: { type: integer, minimum: 0, maximum: 1000000000, example: 4200000, description: Positive cents; zero clears income }
                 dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '1994-04-18' }
                 address: { type: string, maxLength: 200, example: 'Kawangware, Nairobi' }
       responses:
@@ -283,7 +287,9 @@ paths:
         Creates the application, generates the repayment schedule from the
         lender's default rate and runs the rapid-application rule. The loan
         starts in `pending`; nothing moves until the lender verifies identity,
-        approves, and disburses.
+        approves, and disburses. The borrower profile must have a national ID,
+        Kenyan mobile phone, occupation, and positive monthly income before
+        this endpoint validates the application or runs credit scoring.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -313,7 +319,14 @@ paths:
                   loan: { $ref: '#/components/schemas/Loan' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403':
+          description: The caller is not a borrower, or the borrower profile is incomplete
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/Error' }
+                  - { $ref: '#/components/schemas/ProfileIncomplete' }
     get:
       tags: [loans]
       summary: List loans visible to the caller
@@ -1130,9 +1143,28 @@ components:
         phoneMasked: { type: string, nullable: true, example: '0712***678' }
         occupation: { type: string, nullable: true }
         monthlyIncomeCents: { type: integer, nullable: true }
+        completeness:
+          type: object
+          required: [complete, completed, total, missing]
+          properties:
+            complete: { type: boolean }
+            completed: { type: integer, minimum: 0, maximum: 4 }
+            total: { type: integer, enum: [4] }
+            missing:
+              type: array
+              items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents] }
         staffId: { type: string, nullable: true }
         defaultRateBps: { type: integer, nullable: true }
         maxPrincipalCents: { type: integer, nullable: true }
+    ProfileIncomplete:
+      type: object
+      required: [code, message, missing]
+      properties:
+        code: { type: string, enum: [PROFILE_INCOMPLETE] }
+        message: { type: string, example: Complete your profile before applying for a loan. }
+        missing:
+          type: array
+          items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents] }
     Loan:
       type: object
       description: Loan summary. The detail endpoint adds parties, schedule and payments.

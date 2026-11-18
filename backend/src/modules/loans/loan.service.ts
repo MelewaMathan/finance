@@ -317,15 +317,6 @@ export async function createApplication(actor: Actor, input: ApplyLoanInput, req
     throw unprocessable(`This lender lends up to ${(maxPrincipal / 100).toFixed(0)} KES per loan`);
   }
 
-  // Identity verification needs the two encrypted identifiers on file.
-  const profile = await queryOne<{ national_id_enc: string | null; phone_enc: string | null }>(
-    'SELECT national_id_enc, phone_enc FROM borrower_profiles WHERE user_id = $1',
-    [actor.id],
-  );
-  if (!profile?.national_id_enc || !profile.phone_enc) {
-    throw unprocessable('Add your national ID and phone number to your profile before applying');
-  }
-
   const rateBps = lender.default_rate_bps ?? 1000;
   const totalRepayable = computeTotalRepayable(input.principalCents, rateBps, input.termCount);
 

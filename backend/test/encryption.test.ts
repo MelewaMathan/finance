@@ -60,6 +60,55 @@ describe('profile encryption', () => {
     expect(JSON.stringify(response.body)).not.toContain('23456789');
   });
 
+  it.each([
+    ['nationalId', '123456'],
+    ['nationalId', '12A45678'],
+    ['phone', '1234567890'],
+    ['phone', '071234567'],
+  ])('rejects an invalid %s value (%s)', async (field, value) => {
+    const borrower = await register(`invalid-${field}-${value}@test.local`);
+    const response = await request(app)
+      .put('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${borrower.token}`)
+      .send({ [field]: value });
+
+    expect(response.status).toBe(400);
+  });
+
+  it('reports the shared completeness result and audits changed field names without values', async () => {
+    const borrower = await register('profile-audit@test.local');
+    const update = await request(app)
+      .put('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${borrower.token}`)
+      .send({
+        nationalId: '23456789',
+        phone: '0712345678',
+        occupation: 'Tailor',
+        monthlyIncomeCents: 420000,
+        verified: true,
+      });
+    expect(update.status).toBe(200);
+
+    const profile = await request(app)
+      .get('/api/v1/me/profile')
+      .set('Authorization', `Bearer ${borrower.token}`);
+    expect(profile.body.profile.completeness).toEqual({
+      complete: true,
+      completed: 4,
+      total: 4,
+      missing: [],
+    });
+    expect(profile.body.profile.verified).toBeUndefined();
+
+    const audit = await queryOne<{ detail: Record<string, unknown> }>(
+      "SELECT detail FROM audit_log WHERE action = 'profile.update' AND entity_id = $1",
+      [borrower.userId],
+    );
+    expect(audit?.detail.changedFields).toEqual(['nationalId', 'phone', 'occupation', 'monthlyIncomeCents']);
+    expect(JSON.stringify(audit?.detail)).not.toContain('23456789');
+    expect(JSON.stringify(audit?.detail)).not.toContain('0712345678');
+  });
+
   it('flags a shared phone number as an identity conflict without decrypting', async () => {
     const first = await register('first@test.local');
     const second = await register('second@test.local');

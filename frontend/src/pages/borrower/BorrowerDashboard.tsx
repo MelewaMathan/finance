@@ -34,12 +34,17 @@ export function BorrowerDashboard() {
   const awaiting = (loans ?? []).filter((loan) => loan.status === 'pending' || loan.status === 'under_review');
 
   const checks = [
-    { label: 'National ID on file', done: Boolean(profile?.nationalIdMasked) },
-    { label: 'Phone number on file', done: Boolean(profile?.phoneMasked) },
-    { label: 'Occupation recorded', done: Boolean(profile?.occupation) },
-    { label: 'Monthly income recorded', done: Boolean(profile?.monthlyIncomeCents) },
+    { key: 'nationalId', label: 'National ID on file' },
+    { key: 'phone', label: 'Phone number on file' },
+    { key: 'occupation', label: 'Occupation recorded' },
+    { key: 'monthlyIncomeCents', label: 'Monthly income recorded' },
   ];
-  const completed = checks.filter((check) => check.done).length;
+  const completeness = profile?.completeness;
+  const completed = completeness?.completed ?? 0;
+  const checksWithStatus = checks.map((check) => ({
+    ...check,
+    done: completeness ? !completeness.missing.includes(check.key) : false,
+  }));
 
   return (
     <div>
@@ -54,7 +59,7 @@ export function BorrowerDashboard() {
       />
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Profile complete" value={`${completed}/${checks.length}`} hint="Staff verify identity before approving" tone="brand" />
+        <StatCard label="Profile complete" value={`${completed}/${completeness?.total ?? 4}`} hint="Staff verify identity before approving" tone="brand" />
         <StatCard label="Monthly income" value={formatMoney(profile?.monthlyIncomeCents ?? null)} hint="Used as alternative credit data" />
         <StatCard
           label="Outstanding"
@@ -98,7 +103,7 @@ export function BorrowerDashboard() {
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <Card title="Verification checklist" description="Complete these before your first application.">
           <ul className="space-y-3">
-            {checks.map((check) => (
+            {checksWithStatus.map((check) => (
               <li key={check.label} className="flex items-center justify-between gap-3 text-sm">
                 <span className="text-slate-700">{check.label}</span>
                 {check.done ? <Badge tone="success">Complete</Badge> : <Badge tone="warning">Missing</Badge>}

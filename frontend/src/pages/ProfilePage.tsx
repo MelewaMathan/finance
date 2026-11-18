@@ -15,8 +15,12 @@ export function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
   const [nationalId, setNationalId] = useState('');
   const [phone, setPhone] = useState('');
+  const [clearNationalId, setClearNationalId] = useState(false);
+  const [clearPhone, setClearPhone] = useState(false);
   const [occupation, setOccupation] = useState('');
   const [income, setIncome] = useState('');
+  const [occupationChanged, setOccupationChanged] = useState(false);
+  const [incomeChanged, setIncomeChanged] = useState(false);
   const [dateOfBirth, setDateOfBirth] = useState('');
   const [address, setAddress] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -28,6 +32,10 @@ export function ProfilePage() {
     if (!profile) return;
     setOccupation(profile.occupation ?? '');
     setIncome(profile.monthlyIncomeCents ? String(profile.monthlyIncomeCents / 100) : '');
+    setClearNationalId(false);
+    setClearPhone(false);
+    setOccupationChanged(false);
+    setIncomeChanged(false);
   }, [profile]);
 
   if (!user) return null;
@@ -39,13 +47,20 @@ export function ProfilePage() {
     setSaved(false);
     setErrors({});
 
-    // Send only what the user actually typed, so existing encrypted values
-    // are not overwritten with empty strings.
     const body: Record<string, unknown> = {};
-    if (nationalId.trim()) body.nationalId = nationalId.trim();
-    if (phone.trim()) body.phone = phone.trim();
-    if (occupation.trim()) body.occupation = occupation.trim();
-    if (income.trim() && Number.isFinite(Number(income))) body.monthlyIncomeCents = Math.round(Number(income) * 100);
+    if (clearNationalId) body.nationalId = '';
+    else if (nationalId.trim()) body.nationalId = nationalId.trim();
+    if (clearPhone) body.phone = '';
+    else if (phone.trim()) body.phone = phone.trim();
+    if (occupationChanged) body.occupation = occupation.trim();
+    if (incomeChanged) {
+      if (income.trim() && !Number.isFinite(Number(income))) {
+        setBusy(false);
+        setErrors({ monthlyIncomeCents: 'Enter a valid amount.' });
+        return;
+      }
+      body.monthlyIncomeCents = income.trim() ? Math.round(Number(income) * 100) : 0;
+    }
     if (dateOfBirth) body.dateOfBirth = dateOfBirth;
     if (address.trim()) body.address = address.trim();
 
@@ -122,10 +137,26 @@ export function ProfilePage() {
                   <TextInput
                     id="nationalId"
                     value={nationalId}
-                    onChange={(event) => setNationalId(event.target.value)}
+                    onChange={(event) => {
+                      setNationalId(event.target.value);
+                      setClearNationalId(false);
+                    }}
+                    disabled={clearNationalId}
                     placeholder="Enter to update"
                     autoComplete="off"
                   />
+                  {profile?.nationalIdMasked ? (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-rose-700 hover:underline"
+                      onClick={() => {
+                        setClearNationalId((current) => !current);
+                        setNationalId('');
+                      }}
+                    >
+                      {clearNationalId ? 'Keep stored national ID' : 'Remove stored national ID'}
+                    </button>
+                  ) : null}
                 </Field>
 
                 <Field
@@ -137,17 +168,36 @@ export function ProfilePage() {
                   <TextInput
                     id="phone"
                     value={phone}
-                    onChange={(event) => setPhone(event.target.value)}
+                    onChange={(event) => {
+                      setPhone(event.target.value);
+                      setClearPhone(false);
+                    }}
+                    disabled={clearPhone}
                     placeholder="0712 345 678"
                     inputMode="tel"
                   />
+                  {profile?.phoneMasked ? (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-rose-700 hover:underline"
+                      onClick={() => {
+                        setClearPhone((current) => !current);
+                        setPhone('');
+                      }}
+                    >
+                      {clearPhone ? 'Keep stored phone number' : 'Remove stored phone number'}
+                    </button>
+                  ) : null}
                 </Field>
 
                 <Field label="Occupation" htmlFor="occupation" error={errors.occupation}>
                   <TextInput
                     id="occupation"
                     value={occupation}
-                    onChange={(event) => setOccupation(event.target.value)}
+                    onChange={(event) => {
+                      setOccupation(event.target.value);
+                      setOccupationChanged(true);
+                    }}
                     placeholder="Market trader"
                   />
                 </Field>
@@ -156,7 +206,10 @@ export function ProfilePage() {
                   <TextInput
                     id="income"
                     value={income}
-                    onChange={(event) => setIncome(event.target.value)}
+                    onChange={(event) => {
+                      setIncome(event.target.value);
+                      setIncomeChanged(true);
+                    }}
                     placeholder="35000"
                     inputMode="decimal"
                   />

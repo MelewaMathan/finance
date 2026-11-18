@@ -22,6 +22,12 @@ export interface ProfileSummary {
   phoneMasked: string | null;
   occupation: string | null;
   monthlyIncomeCents: number | null;
+  completeness?: {
+    complete: boolean;
+    completed: number;
+    total: 4;
+    missing: string[];
+  };
   staffId?: string | null;
   defaultRateBps?: number;
   maxPrincipalCents?: number;
