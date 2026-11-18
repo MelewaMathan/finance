@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { config } from '../src/config/env';
 import { query } from '../src/db/pool';
 import { sha256Hex } from '../src/lib/crypto';
-import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, kraPinForTest, register, request, app, type Session } from './helpers';
 
 /**
  * M2 -- loan application and management.
@@ -23,7 +23,13 @@ describe('loans', () => {
     const profile = await request(app)
       .put('/api/v1/me/profile')
       .set(...authHeader(borrower))
-      .send({ nationalId: '23456789', phone: '0712345678', occupation: 'Trader', monthlyIncomeCents: 4_500_000 });
+      .send({
+        nationalId: '23456789',
+        phone: '0712345678',
+        occupation: 'Trader',
+        monthlyIncomeCents: 4_500_000,
+        kraPin: kraPinForTest(email),
+      });
     expect(profile.status).toBe(200);
     return borrower;
   }
@@ -94,6 +100,7 @@ describe('loans', () => {
     ['phone', { phone: '' }],
     ['occupation', { occupation: '' }],
     ['monthlyIncomeCents', { monthlyIncomeCents: 0 }],
+    ['kraPin', { kraPin: '' }],
   ])('blocks applications when %s is missing before validating or scoring', async (field, clearedField) => {
     const borrower = await borrowerWithProfile(`missing-${field}@loans.test`);
     const update = await request(app)
@@ -138,6 +145,22 @@ describe('loans', () => {
     expect(staffAttempt.status).toBe(403);
     expect(adminAttempt.status).toBe(403);
     expect(await query('SELECT id FROM loans')).toHaveLength(0);
+  });
+
+  it('never exposes a borrower KRA PIN to staff or admins', async () => {
+    const email = 'kra-private@loans.test';
+    const kraPin = kraPinForTest(email);
+    const borrower = await borrowerWithProfile(email);
+    const lenderSession = await lender();
+    const admin = await createAdmin('kra-private-admin@loans.test');
+    const created = await applyLoan(borrower, lenderSession.userId);
+    expect(created.status).toBe(201);
+
+    const staffLoans = await request(app).get('/api/v1/loans').set(...authHeader(lenderSession));
+    const adminLoans = await request(app).get('/api/v1/loans').set(...authHeader(admin));
+
+    expect(JSON.stringify(staffLoans.body)).not.toContain(kraPin);
+    expect(JSON.stringify(adminLoans.body)).not.toContain(kraPin);
   });
 
   it('enforces the lender maximum principal', async () => {

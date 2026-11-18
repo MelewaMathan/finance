@@ -1,4 +1,5 @@
 import type { Response } from 'supertest';
+import { createHash } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
 import { createApp } from '../src/app';
@@ -10,6 +11,11 @@ import { issueRefreshToken, signAccessToken } from '../src/modules/auth/token.se
 
 export const app = createApp();
 export const PASSWORD = 'Passw0rd!demo';
+
+export function kraPinForTest(seed: string): string {
+  const number = createHash('sha256').update(seed).digest().readUInt32BE(0) % 1_000_000_000;
+  return `A${String(number).padStart(9, '0')}Z`;
+}
 
 export interface Session {
   token: string;

@@ -17,16 +17,33 @@ import type { AwaitingApprovalResponse } from './loginApproval';
  * user is restored without any stored credential; otherwise they are
  * anonymous. The access token never reaches localStorage or sessionStorage.
  */
+export type ProfileCompletenessField =
+  | 'nationalId'
+  | 'phone'
+  | 'occupation'
+  | 'monthlyIncomeCents'
+  | 'kraPin';
+
+export const PROFILE_COMPLETENESS_LABELS: Record<ProfileCompletenessField, string> = {
+  nationalId: 'National ID',
+  phone: 'Phone number',
+  occupation: 'Occupation',
+  monthlyIncomeCents: 'Monthly income',
+  kraPin: 'KRA PIN',
+};
+
 export interface ProfileSummary {
   nationalIdMasked: string | null;
   phoneMasked: string | null;
+  kraPinMasked: string | null;
+  kraPinStored: boolean;
   occupation: string | null;
   monthlyIncomeCents: number | null;
   completeness?: {
     complete: boolean;
     completed: number;
-    total: 4;
-    missing: string[];
+    total: 5;
+    missing: ProfileCompletenessField[];
   };
   staffId?: string | null;
   defaultRateBps?: number;

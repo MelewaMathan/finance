@@ -15,8 +15,10 @@ export function ProfilePage() {
   const { user, profile, refreshProfile } = useAuth();
   const [nationalId, setNationalId] = useState('');
   const [phone, setPhone] = useState('');
+  const [kraPin, setKraPin] = useState('');
   const [clearNationalId, setClearNationalId] = useState(false);
   const [clearPhone, setClearPhone] = useState(false);
+  const [clearKraPin, setClearKraPin] = useState(false);
   const [occupation, setOccupation] = useState('');
   const [income, setIncome] = useState('');
   const [occupationChanged, setOccupationChanged] = useState(false);
@@ -34,6 +36,7 @@ export function ProfilePage() {
     setIncome(profile.monthlyIncomeCents ? String(profile.monthlyIncomeCents / 100) : '');
     setClearNationalId(false);
     setClearPhone(false);
+    setClearKraPin(false);
     setOccupationChanged(false);
     setIncomeChanged(false);
   }, [profile]);
@@ -52,6 +55,16 @@ export function ProfilePage() {
     else if (nationalId.trim()) body.nationalId = nationalId.trim();
     if (clearPhone) body.phone = '';
     else if (phone.trim()) body.phone = phone.trim();
+    if (clearKraPin) body.kraPin = '';
+    else if (kraPin.trim()) {
+      const normalizedKraPin = kraPin.trim().toUpperCase();
+      if (!/^A\d{9}[A-Z]$/.test(normalizedKraPin)) {
+        setBusy(false);
+        setErrors({ kraPin: 'Enter a valid KRA PIN (A followed by 9 digits and a letter).' });
+        return;
+      }
+      body.kraPin = normalizedKraPin;
+    }
     if (occupationChanged) body.occupation = occupation.trim();
     if (incomeChanged) {
       if (income.trim() && !Number.isFinite(Number(income))) {
@@ -76,6 +89,7 @@ export function ProfilePage() {
       setSaved(true);
       setNationalId('');
       setPhone('');
+      setKraPin('');
       setAddress('');
       setDateOfBirth('');
     } catch (caught) {
@@ -116,7 +130,7 @@ export function ProfilePage() {
           <div className="mt-5 rounded-xl bg-slate-50 p-3 text-xs text-slate-600">
             <p className="font-semibold text-slate-700">Encrypted at rest</p>
             <p className="mt-1">
-              National ID and phone number are encrypted with AES-256-GCM. The API only ever returns masked values.
+              National ID, phone number and KRA PIN are encrypted with AES-256-GCM. The API only returns masked values.
             </p>
           </div>
         </Card>
@@ -186,6 +200,38 @@ export function ProfilePage() {
                       }}
                     >
                       {clearPhone ? 'Keep stored phone number' : 'Remove stored phone number'}
+                    </button>
+                  ) : null}
+                </Field>
+
+                <Field label="KRA PIN" htmlFor="kraPin" error={errors.kraPin}>
+                  <TextInput
+                    id="kraPin"
+                    value={kraPin}
+                    onChange={(event) => {
+                      setKraPin(event.target.value.toUpperCase());
+                      setClearKraPin(false);
+                    }}
+                    disabled={clearKraPin}
+                    placeholder="A123456789Z"
+                    autoComplete="off"
+                    maxLength={11}
+                    aria-describedby="kraPinHint"
+                  />
+                  <p id="kraPinHint" className="hint">
+                    Your Kenya Revenue Authority PIN. Stored encrypted.{' '}
+                    {profile?.kraPinStored ? `Stored: ${profile.kraPinMasked}` : 'Not stored yet'}
+                  </p>
+                  {profile?.kraPinStored ? (
+                    <button
+                      type="button"
+                      className="mt-1 text-xs font-medium text-rose-700 hover:underline"
+                      onClick={() => {
+                        setClearKraPin((current) => !current);
+                        setKraPin('');
+                      }}
+                    >
+                      {clearKraPin ? 'Keep stored KRA PIN' : 'Remove stored KRA PIN'}
                     </button>
                   ) : null}
                 </Field>

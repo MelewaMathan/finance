@@ -216,11 +216,13 @@ paths:
       description: >
         National ID and phone are encrypted with AES-256-GCM and blind-indexed
         (HMAC-SHA256) so duplicate identities can be detected without
-        decryption. National IDs must contain 7 to 9 digits. Kenyan mobile
-        numbers are stored in +2547XXXXXXXX or +2541XXXXXXXX form. Empty
-        nationalId, phone, or occupation values clear those fields; setting
-        monthlyIncomeCents to zero clears income. Auditors are read-only;
-        lenders have no borrower profile.
+        decryption. KRA PINs are trimmed, uppercased, encrypted, and indexed
+        with a keyed HMAC; PINs are not verified with KRA. National IDs must
+        contain 7 to 9 digits. Kenyan mobile numbers are stored in
+        +2547XXXXXXXX or +2541XXXXXXXX form. Empty kraPin, nationalId, phone,
+        or occupation values clear those fields; setting monthlyIncomeCents
+        to zero clears income. Auditors are read-only; lenders have no
+        borrower profile.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -231,6 +233,7 @@ paths:
               properties:
                 nationalId: { type: string, pattern: '^\d{7,9}$', example: '23456789' }
                 phone: { type: string, maxLength: 24, example: '0712 345 678' }
+                kraPin: { type: string, pattern: '^A\d{9}[A-Z]$', example: 'A123456789Z', description: Trimmed and uppercased before validation }
                 occupation: { type: string, minLength: 2, maxLength: 80, example: Tailor }
                 monthlyIncomeCents: { type: integer, minimum: 0, maximum: 1000000000, example: 4200000, description: Positive cents; zero clears income }
                 dateOfBirth: { type: string, pattern: '^\d{4}-\d{2}-\d{2}$', example: '1994-04-18' }
@@ -247,6 +250,11 @@ paths:
                   message: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: The KRA PIN is already in use
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '403':
           description: Auditors are read-only, lenders have no borrower profile
           content:
@@ -1141,6 +1149,8 @@ components:
       properties:
         nationalIdMasked: { type: string, nullable: true, example: '2345***89' }
         phoneMasked: { type: string, nullable: true, example: '0712***678' }
+        kraPinMasked: { type: string, nullable: true, example: 'A******789Z' }
+        kraPinStored: { type: boolean }
         occupation: { type: string, nullable: true }
         monthlyIncomeCents: { type: integer, nullable: true }
         completeness:
@@ -1148,11 +1158,11 @@ components:
           required: [complete, completed, total, missing]
           properties:
             complete: { type: boolean }
-            completed: { type: integer, minimum: 0, maximum: 4 }
-            total: { type: integer, enum: [4] }
+            completed: { type: integer, minimum: 0, maximum: 5 }
+            total: { type: integer, enum: [5] }
             missing:
               type: array
-              items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents] }
+              items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents, kraPin] }
         staffId: { type: string, nullable: true }
         defaultRateBps: { type: integer, nullable: true }
         maxPrincipalCents: { type: integer, nullable: true }
@@ -1164,7 +1174,7 @@ components:
         message: { type: string, example: Complete your profile before applying for a loan. }
         missing:
           type: array
-          items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents] }
+          items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents, kraPin] }
     Loan:
       type: object
       description: Loan summary. The detail endpoint adds parties, schedule and payments.

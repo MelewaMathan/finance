@@ -6,10 +6,10 @@ import { config } from '../config/env';
  *
  * Two different jobs are handled here:
  *  1. Field-level encryption at rest (AES-256-GCM) for national IDs, phone
- *     numbers, guarantor details -- data that must never be readable by a
+ *     numbers, KRA PINs, guarantor details -- data that must never be readable by a
  *     database dump alone.
  *  2. Blind indexes (HMAC-SHA256) so we can still detect duplicate national
- *     IDs / phones without storing the plaintext or decrypting rows.
+ *     IDs / phones / KRA PINs without storing plaintext or decrypting rows.
  *
  * Ciphertext format: `v1:<iv_b64>:<tag_b64>:<ciphertext_b64>`
  * The version prefix allows key rotation later without guessing the format.
@@ -74,6 +74,14 @@ export function nationalIdBlindIndex(value: string): string {
 
 export function phoneBlindIndex(value: string): string {
   return hmacSha256Hex(`phone:${normalizePhone(value)}`);
+}
+
+export function normalizeKraPin(value: string): string {
+  return value.trim().toUpperCase();
+}
+
+export function kraPinBlindIndex(value: string): string {
+  return hmacSha256Hex(`kra-pin:${normalizeKraPin(value)}`);
 }
 
 /** Masked representation for API responses: 0712***678 */

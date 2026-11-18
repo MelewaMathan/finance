@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Badge, Card, PageHeader, ShieldIcon, StatCard } from '../../components/ui';
-import { useAuth } from '../../lib/auth';
+import { Alert, Badge, Card, PageHeader, ShieldIcon, StatCard } from '../../components/ui';
+import {
+  PROFILE_COMPLETENESS_LABELS,
+  useAuth,
+  type ProfileCompletenessField,
+} from '../../lib/auth';
 import { formatMoney } from '../../lib/format';
 import { listLoans, STATUS_LABEL, STATUS_TONE, type LoanSummary } from '../../lib/loans';
 
@@ -33,11 +37,12 @@ export function BorrowerDashboard() {
   const outstanding = active.reduce((sum, loan) => sum + (loan.outstandingCents ?? 0), 0);
   const awaiting = (loans ?? []).filter((loan) => loan.status === 'pending' || loan.status === 'under_review');
 
-  const checks = [
+  const checks: Array<{ key: ProfileCompletenessField; label: string }> = [
     { key: 'nationalId', label: 'National ID on file' },
     { key: 'phone', label: 'Phone number on file' },
     { key: 'occupation', label: 'Occupation recorded' },
     { key: 'monthlyIncomeCents', label: 'Monthly income recorded' },
+    { key: 'kraPin', label: 'KRA PIN on file' },
   ];
   const completeness = profile?.completeness;
   const completed = completeness?.completed ?? 0;
@@ -45,6 +50,7 @@ export function BorrowerDashboard() {
     ...check,
     done: completeness ? !completeness.missing.includes(check.key) : false,
   }));
+  const missingLabels = completeness?.missing.map((field) => PROFILE_COMPLETENESS_LABELS[field]) ?? [];
 
   return (
     <div>
@@ -58,8 +64,24 @@ export function BorrowerDashboard() {
         }
       />
 
+      {completeness && !completeness.complete ? (
+        <Alert tone="warning" className="mb-5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-semibold">Complete your profile</p>
+              <p className="mt-1">
+                Add the missing details before applying: {missingLabels.join(', ')}.
+              </p>
+            </div>
+            <Link to="/profile" className="shrink-0 font-semibold underline">
+              Update your profile
+            </Link>
+          </div>
+        </Alert>
+      ) : null}
+
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Profile complete" value={`${completed}/${completeness?.total ?? 4}`} hint="Staff verify identity before approving" tone="brand" />
+        <StatCard label="Profile complete" value={`${completed}/${completeness?.total ?? 5}`} hint="Staff verify identity before approving" tone="brand" />
         <StatCard label="Monthly income" value={formatMoney(profile?.monthlyIncomeCents ?? null)} hint="Used as alternative credit data" />
         <StatCard
           label="Outstanding"
@@ -123,7 +145,7 @@ export function BorrowerDashboard() {
             </li>
             <li className="flex gap-2">
               <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />
-              Your ID and phone number are encrypted in the database; staff see masked values only.
+              Your ID, phone number and KRA PIN are encrypted in the database; sensitive values are masked.
             </li>
             <li className="flex gap-2">
               <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-brand-600" />

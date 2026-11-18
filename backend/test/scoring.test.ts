@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
-import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, kraPinForTest, register, request, app, type Session } from './helpers';
 
 /**
  * M5 -- advisory credit scoring.
@@ -23,6 +23,7 @@ describe('credit scoring', () => {
         phone: '0712345678',
         occupation: 'Trader',
         monthlyIncomeCents: 4_500_000,
+        kraPin: kraPinForTest(email),
         ...overrides,
       });
     expect(profile.status).toBe(200);

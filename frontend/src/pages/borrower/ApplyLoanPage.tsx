@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Card, Field, PageHeader, Select, Spinner, TextInput } from '../../components/ui';
 import { ApiError } from '../../lib/api';
+import { PROFILE_COMPLETENESS_LABELS, useAuth } from '../../lib/auth';
 import { formatMoney, percentFromBps } from '../../lib/format';
 import { applyLoan, listLenders, type Frequency, type LenderOption } from '../../lib/loans';
 
@@ -14,6 +15,7 @@ import { applyLoan, listLenders, type Frequency, type LenderOption } from '../..
  */
 export function ApplyLoanPage() {
   const navigate = useNavigate();
+  const { profile } = useAuth();
   const [lenders, setLenders] = useState<LenderOption[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -47,6 +49,9 @@ export function ApplyLoanPage() {
   }, []);
 
   const selected = lenders?.find((option) => option.id === lenderId);
+  const missingProfileFields = profile?.completeness?.missing.map(
+    (field) => PROFILE_COMPLETENESS_LABELS[field],
+  ) ?? [];
 
   const estimate = useMemo(() => {
     const principalCents = Math.round(Number(principal || '0') * 100);
@@ -96,6 +101,18 @@ export function ApplyLoanPage() {
         title="Apply for a loan"
         subtitle="Your application goes to the staff member you choose. Identity data stays encrypted."
       />
+
+      {profile?.completeness && !profile.completeness.complete ? (
+        <Alert tone="warning" className="mb-5">
+          <div>
+            <p className="font-semibold">Complete your profile before applying for a loan.</p>
+            <p className="mt-1">Missing: {missingProfileFields.join(', ')}.</p>
+            <Link to="/profile" className="mt-2 inline-block font-semibold underline">
+              Update your profile
+            </Link>
+          </div>
+        </Alert>
+      ) : null}
 
       {loadError ? (
         <Alert>{loadError}</Alert>

@@ -9,6 +9,8 @@ import { notFound } from '../../lib/errors';
 export interface ProfileSummary {
   nationalIdMasked: string | null;
   phoneMasked: string | null;
+  kraPinMasked: string | null;
+  kraPinStored: boolean;
   occupation: string | null;
   monthlyIncomeCents: number | null;
   completeness?: ProfileCompleteness;
@@ -20,7 +22,7 @@ export interface ProfileSummary {
 export type ProfileCompleteness = {
   complete: boolean;
   completed: number;
-  total: 4;
+  total: 5;
   missing: string[];
 };
 
@@ -29,10 +31,11 @@ export async function getProfileCompleteness(userId: string): Promise<ProfileCom
   const row = await queryOne<{
     national_id_enc: string | null;
     phone_enc: string | null;
+    kra_pin_encrypted: string | null;
     occupation: string | null;
     monthly_income_cents: number | string | null;
   }>(
-    `SELECT national_id_enc, phone_enc, occupation, monthly_income_cents
+    `SELECT national_id_enc, phone_enc, kra_pin_encrypted, occupation, monthly_income_cents
        FROM borrower_profiles
       WHERE user_id = $1`,
     [userId],
@@ -43,12 +46,13 @@ export async function getProfileCompleteness(userId: string): Promise<ProfileCom
     ['phone', Boolean(row?.phone_enc)],
     ['occupation', Boolean(row?.occupation?.trim())],
     ['monthlyIncomeCents', Number(row?.monthly_income_cents ?? 0) > 0],
+    ['kraPin', Boolean(row?.kra_pin_encrypted)],
   ];
   const missing = checks.filter(([, done]) => !done).map(([field]) => field);
   return {
     complete: missing.length === 0,
     completed: checks.length - missing.length,
-    total: 4,
+    total: 5,
     missing,
   };
 }
@@ -65,6 +69,8 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
     return {
       nationalIdMasked: null,
       phoneMasked: null,
+      kraPinMasked: null,
+      kraPinStored: false,
       occupation: null,
       monthlyIncomeCents: null,
       staffId: row?.staff_id ?? null,
@@ -74,22 +80,36 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
   }
 
   if (user.role === 'admin') {
-    return { nationalIdMasked: null, phoneMasked: null, occupation: null, monthlyIncomeCents: null };
+    return {
+      nationalIdMasked: null,
+      phoneMasked: null,
+      kraPinMasked: null,
+      kraPinStored: false,
+      occupation: null,
+      monthlyIncomeCents: null,
+    };
   }
 
   const row = await queryOne<{
     national_id_enc: string | null;
     phone_enc: string | null;
+    kra_pin_encrypted: string | null;
+    kra_pin_last4: string | null;
     occupation: string | null;
     monthly_income_cents: number | string | null;
   }>(
-    'SELECT national_id_enc, phone_enc, occupation, monthly_income_cents FROM borrower_profiles WHERE user_id = $1',
+    `SELECT national_id_enc, phone_enc, kra_pin_encrypted, kra_pin_last4,
+            occupation, monthly_income_cents
+       FROM borrower_profiles
+      WHERE user_id = $1`,
     [userId],
   );
 
   return {
     nationalIdMasked: maskValue(decryptField(row?.national_id_enc)),
     phoneMasked: maskValue(decryptField(row?.phone_enc)),
+    kraPinMasked: row?.kra_pin_last4 ? `A******${row.kra_pin_last4}` : null,
+    kraPinStored: Boolean(row?.kra_pin_encrypted),
     occupation: row?.occupation ?? null,
     monthlyIncomeCents: row?.monthly_income_cents === null || row?.monthly_income_cents === undefined
       ? null

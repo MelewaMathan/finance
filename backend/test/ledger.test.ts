@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { hashTransaction } from '../src/lib/canonical';
-import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, kraPinForTest, register, request, app, type Session } from './helpers';
 
 /**
  * M4 -- ledger verification.
@@ -19,7 +19,13 @@ describe('ledger', () => {
     const profile = await request(app)
       .put('/api/v1/me/profile')
       .set(...authHeader(borrower))
-      .send({ nationalId: '23456789', phone: '0712345678', occupation: 'Trader', monthlyIncomeCents: 4_500_000 });
+      .send({
+        nationalId: '23456789',
+        phone: '0712345678',
+        occupation: 'Trader',
+        monthlyIncomeCents: 4_500_000,
+        kraPin: kraPinForTest(email),
+      });
     expect(profile.status).toBe(200);
     return borrower;
   }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { sha256Hex } from '../src/lib/crypto';
-import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, kraPinForTest, register, request, app, type Session } from './helpers';
 
 /**
  * M3 -- repayment tracking, penalties and statements.
@@ -16,7 +16,13 @@ describe('repayments', () => {
     await request(app)
       .put('/api/v1/me/profile')
       .set(...authHeader(borrower))
-      .send({ nationalId: '23456789', phone: '0712345678', occupation: 'Trader', monthlyIncomeCents: 4_500_000 });
+      .send({
+        nationalId: '23456789',
+        phone: '0712345678',
+        occupation: 'Trader',
+        monthlyIncomeCents: 4_500_000,
+        kraPin: kraPinForTest(email),
+      });
 
     const lender = await register(`lender-${email}`, {
       fullName: 'Amani Mwangi',

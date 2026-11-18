@@ -3,11 +3,13 @@ import { z } from 'zod';
 import { query, queryOne } from '../../db/pool';
 import {
   encryptField,
+  kraPinBlindIndex,
   nationalIdBlindIndex,
+  normalizeKraPin,
   normalizeNationalId,
   phoneBlindIndex,
 } from '../../lib/crypto';
-import { badRequest, forbidden } from '../../lib/errors';
+import { badRequest, conflict, forbidden } from '../../lib/errors';
 import { requireAuth, denyAuditorWrites } from '../../middleware/auth';
 import { limitWrites } from '../../middleware/rateLimit';
 import { validate } from '../../middleware/validate';
@@ -33,6 +35,15 @@ const updateSchema = z.object({
     .trim()
     .max(24)
     .refine((value) => value === '' || normalizeKenyanMobilePhone(value) !== null, 'enter a valid Kenyan mobile number')
+    .optional(),
+  kraPin: z
+    .string()
+    .trim()
+    .transform(normalizeKraPin)
+    .refine(
+      (value) => value === '' || /^A\d{9}[A-Z]$/.test(value),
+      'Enter a valid KRA PIN (A followed by 9 digits and a letter)',
+    )
     .optional(),
   occupation: z
     .string()
@@ -112,6 +123,22 @@ usersRouter.put('/profile', requireAuth, denyAuditorWrites, limitWrites, validat
       await detectIdentityConflicts({ userId: req.user!.id, phoneBi: phoneBlindIndex(phone) });
     }
   }
+  if (body.kraPin !== undefined) {
+    const kraPin = body.kraPin || null;
+    const kraPinHash = kraPin ? kraPinBlindIndex(kraPin) : null;
+    if (kraPinHash) {
+      const duplicate = await queryOne<{ user_id: string }>(
+        'SELECT user_id FROM borrower_profiles WHERE kra_pin_hash = $1 AND user_id <> $2',
+        [kraPinHash, req.user!.id],
+      );
+      if (duplicate) throw conflict("This KRA PIN can't be used");
+    }
+
+    push('kra_pin_encrypted', kraPin ? encryptField(kraPin) : null);
+    push('kra_pin_hash', kraPinHash);
+    push('kra_pin_last4', kraPin ? kraPin.slice(-4) : null);
+    changedFields.push('kraPin');
+  }
   if (body.occupation !== undefined) {
     push('occupation', body.occupation || null);
     changedFields.push('occupation');
@@ -132,10 +159,21 @@ usersRouter.put('/profile', requireAuth, denyAuditorWrites, limitWrites, validat
   if (sets.length === 0) throw badRequest('No profile fields supplied');
 
   values.push(req.user!.id);
-  await query(
-    `UPDATE borrower_profiles SET ${sets.join(', ')} WHERE user_id = $${values.length}`,
-    values,
-  );
+  try {
+    await query(
+      `UPDATE borrower_profiles SET ${sets.join(', ')} WHERE user_id = $${values.length}`,
+      values,
+    );
+  } catch (error) {
+    const databaseError = error as { code?: string; constraint?: string };
+    if (
+      databaseError.code === '23505' &&
+      databaseError.constraint === 'borrower_profiles_kra_pin_hash_uidx'
+    ) {
+      throw conflict("This KRA PIN can't be used");
+    }
+    throw error;
+  }
 
   await auditRequest(req, 'profile.update', 'borrower_profile', req.user!.id, { changedFields });
 

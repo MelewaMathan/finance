@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { query } from '../src/db/pool';
 import { __setAnomalyScorer, type AnomalyResponse } from '../src/modules/fraud/anomaly.client';
-import { authHeader, createAdmin, register, request, app, type Session } from './helpers';
+import { authHeader, createAdmin, kraPinForTest, register, request, app, type Session } from './helpers';
 
 /**
  * M6 -- fraud detection, holds and the review queue.
@@ -41,7 +41,13 @@ async function borrower(email: string): Promise<Session> {
   const profile = await request(app)
     .put('/api/v1/me/profile')
     .set(...authHeader(session))
-    .send({ nationalId: '23456789', phone: '0712345678', occupation: 'Trader', monthlyIncomeCents: 4_500_000 });
+    .send({
+      nationalId: '23456789',
+      phone: '0712345678',
+      occupation: 'Trader',
+      monthlyIncomeCents: 4_500_000,
+      kraPin: kraPinForTest(email),
+    });
   expect(profile.status).toBe(200);
   return session;
 }
