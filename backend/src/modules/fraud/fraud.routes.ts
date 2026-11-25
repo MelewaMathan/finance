@@ -21,8 +21,8 @@ import {
 /**
  * Fraud review + alert routes (M6).
  *
- * Reading the queue is staff/admin only; acting on it is the enterprise's
- * responsibility because it is the account holder for the book. An admin
+ * Reading the queue is staff/admin only; acting on it is institution staff's
+ * responsibility because staff act for the institution. An admin
  * reviews the reviewer while remaining read-only.
  */
 export const fraudRouter = Router();

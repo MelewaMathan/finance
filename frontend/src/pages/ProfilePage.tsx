@@ -3,7 +3,7 @@ import { Alert, Badge, Card, Field, PageHeader, TextInput } from '../components/
 import { api } from '../lib/api';
 import { ROLE_LABEL, useAuth } from '../lib/auth';
 import { fieldErrors, messageOf } from '../lib/errors';
-import { formatDate, formatMoney, percentFromBps } from '../lib/format';
+import { formatDate } from '../lib/format';
 
 /**
  * Profile page.
@@ -294,19 +294,11 @@ export function ProfilePage() {
                     <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Staff ID</dt>
                     <dd className="mt-0.5 text-slate-900">{profile?.staffId ?? 'Not set'}</dd>
                   </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Default rate per period</dt>
-                    <dd className="mt-0.5 text-slate-900">{percentFromBps(profile?.defaultRateBps ?? 0)}</dd>
-                  </div>
-                  <div>
-                    <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Maximum principal</dt>
-                    <dd className="mt-0.5 text-slate-900">{formatMoney(profile?.maxPrincipalCents ?? null)}</dd>
-                  </div>
                 </>
               ) : (
                 <div>
                   <dt className="text-xs font-semibold uppercase tracking-wide text-slate-500">Access level</dt>
-                  <dd className="mt-0.5 text-slate-900">Read-only forensic access to audit, fraud and ledger records.</dd>
+                  <dd className="mt-0.5 text-slate-900">Read-only access to loans; institution loan settings are managed here.</dd>
                 </div>
               )}
               <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600">

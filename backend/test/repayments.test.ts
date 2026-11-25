@@ -32,7 +32,6 @@ describe('repayments', () => {
     });
 
     const applied = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
-      lenderId: lender.userId,
       principalCents: 500_000,
       termCount: 4,
       frequency: 'weekly',
@@ -115,6 +114,18 @@ describe('repayments', () => {
     expect(actions).toHaveLength(1);
   });
 
+  it('continues to accept repayments for historical loans with a legacy staff link', async () => {
+    const { borrower, lender, loanId } = await scenario('legacy-repayment@repay.test');
+    await query('UPDATE loans SET lender_id = $1 WHERE id = $2', [lender.userId, loanId]);
+
+    const response = await repay(borrower, loanId, { amountCents: 100_000, method: 'cash' });
+    expect(response.status).toBe(201);
+    expect(response.body.loan.summary.paidCents).toBe(100_000);
+
+    const stored = await query<{ lender_id: string | null }>('SELECT lender_id FROM loans WHERE id = $1', [loanId]);
+    expect(stored[0].lender_id).toBe(lender.userId);
+  });
+
   it('refuses an overpayment and any repayment before disbursement', async () => {
     const { borrower, loanId } = await scenario('over@repay.test');
 
@@ -125,7 +136,6 @@ describe('repayments', () => {
     // A pending application has no schedule to repay.
     const lender = await register('lender-pending@repay.test', { role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Second Credit' });
     const applied = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
-      lenderId: lender.userId,
       principalCents: 100_000,
       termCount: 2,
       frequency: 'monthly',
@@ -206,6 +216,7 @@ describe('repayments', () => {
   });
 
   it('generates JSON, PDF and CSV statements with matching totals', async () => {
+    await query("UPDATE institution_loan_settings SET institution_name = 'Statement Institution' WHERE id = true");
     const { borrower, lender, loanId } = await scenario('statement@repay.test');
 
     await repay(borrower, loanId, { amountCents: 100_000, method: 'mobile_money', mobileTxnCode: 'SJ21AB3XYZ' });
@@ -213,6 +224,7 @@ describe('repayments', () => {
     const json = await request(app).get(`/api/v1/loans/${loanId}/statement`).set(...authHeader(borrower));
     expect(json.status).toBe(200);
     expect(json.body.statement.ref).toMatch(/^SMF-/);
+    expect(json.body.statement.institution.name).toBe('Statement Institution');
     expect(json.body.statement.summary.paidCents).toBe(100_000);
     expect(json.body.statement.summary.outstandingCents).toBe(600_000);
     expect(json.body.statement.installments).toHaveLength(4);
@@ -231,12 +243,15 @@ describe('repayments', () => {
     expect(pdf.headers['content-type']).toContain('application/pdf');
     const bytes = pdf.body as Buffer;
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(bytes.toString('latin1')).toContain('Statement Institution');
     expect(sha256Hex(bytes)).toBe(pdf.headers['x-document-sha256']);
 
     const csv = await request(app).get(`/api/v1/loans/${loanId}/statement.csv`).set(...authHeader(borrower));
     expect(csv.status).toBe(200);
     expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text.startsWith('Statement Institution loan statement')).toBe(true);
     expect(csv.text).toContain(json.body.statement.ref);
+    expect(csv.text).toContain('Institution,Statement Institution');
     expect(csv.text).toContain('SJ21AB3XYZ');
     expect(csv.text).toContain('1000.00');
 

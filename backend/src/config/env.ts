@@ -84,17 +84,12 @@ const schema = z.object({
 
   REPORT_STORAGE_DIR: z.string().default('storage/reports'),
 
-  // Single enterprise configuration.
-  ENTERPRISE_NAME: z.string().default('SecureMicrofinance Enterprise'),
   // Human-readable institution name printed on loan agreements and statements.
   // Set this to the organisation's legal trading name before going live.
   INSTITUTION_NAME: z.string().default('SecureMicrofinance'),
   // Invite code that lets a person self-register as staff.
   // Keep this secret; share it only with authorised administrators.
   STAFF_INVITE_CODE: z.string().min(8).default('smf-staff-invite-change-me'),
-  ENTERPRISE_DEFAULT_RATE_BPS: z.coerce.number().int().min(0).max(10000).default(1000),
-  ENTERPRISE_MAX_PRINCIPAL_CENTS: z.coerce.number().int().positive().default(50_000_00),
-
   // First-admin seed credentials.
   // In non-production environments these fall back to safe demo values.
   // In production, both MUST be set explicitly or the seed refuses to run.

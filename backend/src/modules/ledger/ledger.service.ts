@@ -174,7 +174,7 @@ async function verifyRow(
   }
 }
 
-/** Full proof report for one loan, visible to its borrower, lender and auditors. */
+/** Full proof report for the borrower, institution staff and admins. */
 export async function getLoanLedgerReport(actor: Actor, loanId: string): Promise<LoanLedgerReport> {
   const loan = await loadVisibleLoan(actor, loanId);
   const rows = await query<TransactionRow>(
@@ -224,13 +224,12 @@ export interface AnchorRetryResult {
  * a second run cannot mint a second proof.
  */
 export async function anchorLoanTransactions(actor: Actor, loanId: string): Promise<AnchorRetryResult> {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can anchor transactions.');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can anchor transactions.');
   if (!isChainEnabled()) {
     throw new AppError(503, 'CHAIN_UNAVAILABLE', 'On-chain anchoring is not configured on this server.');
   }
 
   const loan = await loadVisibleLoan(actor, loanId);
-  if (loan.lender_id !== actor.id) throw forbidden('This loan is not in the enterprise book.');
 
   const rows = await query<TransactionRow>(
     `SELECT id, type, amount_cents, method, mobile_txn_code_norm, status, canonical_payload_hash,
@@ -304,7 +303,7 @@ export interface AuditAnchorResult {
  * fails verification would let an attacker launder a tampered history.
  */
 export async function anchorAuditTrail(actor: Actor): Promise<AuditAnchorResult> {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can anchor the audit trail.');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can anchor the audit trail.');
   if (!isChainEnabled()) {
     throw new AppError(503, 'CHAIN_UNAVAILABLE', 'On-chain anchoring is not configured on this server.');
   }

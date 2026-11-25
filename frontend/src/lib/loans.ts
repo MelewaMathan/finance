@@ -17,7 +17,7 @@ export type LoanStatus =
 export type Frequency = 'daily' | 'weekly' | 'monthly';
 
 export interface Party {
-  id: string;
+  id: string | null;
   fullName: string;
   email?: string;
   institutionName?: string | null;
@@ -65,7 +65,7 @@ export interface LoanSummary {
   purpose: string;
   outstandingCents: number | null;
   borrower: Party;
-  lender: Party;
+  institution: Party;
   identityVerified: boolean;
   agreementSha256: string | null;
   heldReason: string | null;
@@ -131,12 +131,13 @@ export interface LoanDetail extends Omit<LoanSummary, 'score'> {
   };
 }
 
-export interface LenderOption {
-  id: string;
-  fullName: string;
-  institutionName: string | null;
-  defaultRateBps: number;
+export interface InstitutionLoanSettings {
+  interestRateBps: number;
+  minPrincipalCents: number;
   maxPrincipalCents: number;
+  maxInstallments: number;
+  allowedFrequencies: Frequency[];
+  institutionName: string;
 }
 
 export interface LoanPage {
@@ -213,15 +214,33 @@ export async function rescoreLoan(loanId: string): Promise<LoanScore> {
   return response.score;
 }
 
-export async function listLenders(): Promise<LenderOption[]> {
-  const response = await api<{ items: LenderOption[] }>('/lenders');
-  return response.items;
+export async function getLoanSettings(): Promise<InstitutionLoanSettings> {
+  const response = await api<{ settings: InstitutionLoanSettings }>('/loan-settings');
+  return response.settings;
 }
 
-export async function listLoans(params: { status?: LoanStatus; q?: string; pageSize?: number } = {}): Promise<LoanPage> {
+export async function getAdminLoanSettings(): Promise<InstitutionLoanSettings> {
+  const response = await api<{ settings: InstitutionLoanSettings }>('/admin/loan-settings');
+  return response.settings;
+}
+
+export async function updateAdminLoanSettings(
+  settings: InstitutionLoanSettings,
+): Promise<InstitutionLoanSettings> {
+  const response = await api<{ settings: InstitutionLoanSettings }>('/admin/loan-settings', {
+    method: 'PUT',
+    body: settings,
+  });
+  return response.settings;
+}
+
+export async function listLoans(
+  params: { status?: LoanStatus; q?: string; page?: number; pageSize?: number } = {},
+): Promise<LoanPage> {
   const search = new URLSearchParams();
   if (params.status) search.set('status', params.status);
   if (params.q) search.set('q', params.q);
+  if (params.page) search.set('page', String(params.page));
   if (params.pageSize) search.set('pageSize', String(params.pageSize));
   const suffix = search.size > 0 ? `?${search.toString()}` : '';
   return api<LoanPage>(`/loans${suffix}`);
@@ -233,7 +252,6 @@ export async function getLoan(loanId: string): Promise<LoanDetail> {
 }
 
 export interface ApplyLoanPayload {
-  lenderId: string;
   principalCents: number;
   termCount: number;
   frequency: Frequency;

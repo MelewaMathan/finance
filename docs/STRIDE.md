@@ -27,8 +27,8 @@ Terminology used below:
 | Money movements | `transactions` (integer cents, payload hash, on-chain proof) | Disputing or inventing debts |
 | Signed loan agreement | PDF in `storage/`, SHA-256 in `documents` | Substituting different terms after signing |
 | Evidence chain | `audit_log` + on-chain anchors | Rewriting history: repudiating an approval, erasing a hold |
-| Credit model and scores | `ml-service/model/*.joblib`, `credit_scores` | Gaming decisions; the model is the lender's second opinion |
-| Availability of the API | — | A lender who cannot see a payment believes it was not made |
+| Credit model and scores | `ml-service/model/*.joblib`, `credit_scores` | Gaming decisions; the model is staff's second opinion |
+| Availability of the API | — | Staff who cannot see a payment may believe it was not made |
 
 ## 2. Elements and the boundary each one sits on
 
@@ -72,8 +72,8 @@ mature deployment would add.
 
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
-| B1 | E | Borrower reads another borrower's loan | `loadVisibleLoan` scopes by `borrower_id`/`lender_id`; auditors see all; anything else is `404`, not `403` | — |
-| B2 | E | Staff approves or disburses on another staff member's book | `requireRole('staff')` at the route **and** ownership re-check in the service; tested in `loans.test.ts` ("scopes the queue to each book") | — |
+| B1 | E | Borrower reads another borrower's loan | `loadVisibleLoan` scopes by `borrower_id`; staff and admins can read institution loans; anything else is `404`, not `403` | — |
+| B2 | E | Unauthorised user approves or disburses a loan | `requireRole('staff')` at the route; staff can review all institution applications; tested in `loans.test.ts` | — |
 | B3 | E | Admin modifies money | No write route accepts `admin`; `denyAuditorWrites` is a redundant belt on the one route a shared middleware could have let through | An admin can mark **their own** alert as read (`alerts.user_id = actor.id`) — no money, no evidence is touched |
 | B4 | E | Borrower marks their own loan as verified / approved | Decision endpoints are staff-only; identity verification is staff-only; the service also re-checks loan status transitions | — |
 | B5 | I | Existence oracle via error codes | Hidden resources answer `404`; `403` is reserved for "you exist but may not do this" | Endpoint shape (e.g. `409` on a second decision) can still reveal that a resource exists to someone who can already see it |
@@ -95,9 +95,9 @@ mature deployment would add.
 
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
-| D1 | T | Lender changes the terms after signing | PDF is rendered server-side, its SHA-256 stored in `documents`, referenced by `loans.agreement_sha256`, and the download **recomputes** the digest of the bytes it is about to send; a mismatch refuses with `409` and writes `document.integrity_violation` to the audit chain | Someone with write access to both the file and the database can replace both. Only the on-chain anchor closes that |
+| D1 | T | Staff changes the terms after signing | PDF is rendered server-side, its SHA-256 stored in `documents`, referenced by `loans.agreement_sha256`, and the download **recomputes** the digest of the bytes it is about to send; a mismatch refuses with `409` and writes `document.integrity_violation` to the audit chain | Someone with write access to both the file and the database can replace both. Only the on-chain anchor closes that |
 | D2 | T | Borrower edits an application after approval | Status transitions are checked in the service (`pending → verified → approved/rejected → disbursed`); a second decision is a `409`; totals are recomputed server-side, never taken from the client | — |
-| D3 | R | Lender denies having approved | `loan.approved` audit row with actor, IP, user agent and the agreement hash | — |
+| D3 | R | Staff denies having approved | `loan.approved` audit row with actor, IP, user agent and the agreement hash | — |
 | D4 | I | Path traversal on the document download | `file_path` is resolved against the storage root and rejected if it escapes | `file_path` never comes from a request, so this is defence in depth |
 | D5 | R | Same agreement served to a different loan | `/loans/:id/agreement` loads the loan first, then that loan's `agreement_doc_id` | — |
 | D6 | D | File system full / storage gone | — | `fs.writeFileSync` fails and the approval transaction rolls back (bytes are rendered *before* the transaction), so the loan stays undecided rather than approved-without-agreement. There is no capacity monitoring |
@@ -106,7 +106,7 @@ mature deployment would add.
 
 | # | STRIDE | Attack | Control | Residual |
 | --- | --- | --- | --- | --- |
-| E1 | T | Replaying someone else's M-Pesa receipt | Rule R1 (duplicate receipt across loans), R2 (forged pattern), R3 (identity conflict); the movement is parked as `held` and only a lender can release it | Releasing a hold is a human decision with no second approver |
+| E1 | T | Replaying someone else's M-Pesa receipt | Rule R1 (duplicate receipt across loans), R2 (forged pattern), R3 (identity conflict); the movement is parked as `held` and institution staff can release it | Releasing a hold is a human decision with no second approver |
 | E2 | T | Overpaying / negative amounts | Integer cents everywhere; zod bounds; the amount is re-checked against the outstanding balance **inside** `SELECT ... FOR UPDATE`, so two concurrent payments cannot both pass | — |
 | E3 | T | Double disbursement | R5 duplicate-disbursement rule plus a status check; a repeat disbursement is refused | A clever client that races two different receipts still produces two movements; the rules flag it, they do not forbid it |
 | E4 | T | Releasing a hold twice | Release requires `transactions.status = 'held'` and (for disbursement) `loans.status = 'held'`; the update is conditional and re-read | — |
@@ -121,7 +121,7 @@ mature deployment would add.
 | --- | --- | --- | --- | --- |
 | F1 | T | Editing an audit row | `BEFORE UPDATE`/`BEFORE DELETE`/`BEFORE TRUNCATE` triggers raise an exception; the hash chain would break anyway | A superuser can `ALTER TABLE audit_log DISABLE TRIGGER USER` — and can recompute the chain |
 | F2 | T | Deleting the tail of the log | `prev_hash` chaining; `verifyAuditChain` reports the first mismatch; the admin UI shows the verdict and the row | Nothing at rest prevents the deletion, only detection |
-| F3 | T | Rewriting the whole chain after tampering | Chain heads can be anchored on the public ledger; `anchorAuditRoot` is **monotonic**, so an older root cannot be re-anchored | Anchoring is manual (a lender-triggered endpoint), so tampering between the last anchor and detection is invisible until the next anchor |
+| F3 | T | Rewriting the whole chain after tampering | Chain heads can be anchored on the public ledger; `anchorAuditRoot` is **monotonic**, so an older root cannot be re-anchored | Anchoring is manual (a staff-triggered endpoint), so tampering between the last anchor and detection is invisible until the next anchor |
 | F4 | R | Repudiating an action | Actor id + role + IP + user agent + request id per row; rows are never updated, so the original claim survives | A shared login is a shared actor |
 | F5 | I | Admin reads PII from the log | `detail` holds ids and hashes, not values; actor names are resolved at read time | — |
 | F6 | I | Quiet mass exfiltration of the log | Exports are admin-only and each one writes `audit.exported` with a SHA-256 of the file | No alerting on export volume |
@@ -149,7 +149,7 @@ mature deployment would add.
 | H2 | T | Model silently changed | Feature order is a contract checked at startup; a mismatch raises instead of scoring confidently wrong | Anyone who can write `model/*.joblib` controls every score — and `joblib.load` is code execution. File permissions are the control |
 | H3 | T | Client steers its own score | Features are computed server-side from the database; the request body has no score field | — |
 | H4 | D | ML service down | 3-second timeout, then a deterministic labelled fallback (`model_source`); the anomaly layer fails **open**, so rules still run | A fallback that is silently used weakens decisions; it is labelled in the row and the UI rather than hidden |
-| H5 | E | A model decides a loan | The score is advisory; a human makes the decision; the loan row records who | A lender who rubber-stamps the score is a process failure the code cannot see |
+| H5 | E | A model decides a loan | The score is advisory; a human makes the decision; the loan row records who | Staff who rubber-stamp the score create a process failure the code cannot see |
 | H6 | T | Adversarial evasion of the anomaly model | Rules R1–R5 are deterministic and independent of the model | The synthetic training set makes evasion trivially easy. Stated as a limitation, not defended |
 
 ### E9 · Admin views and exports
@@ -179,7 +179,7 @@ Every claim above that matters is exercised by a test. Counts are for the curren
 | Control | Where it is proved |
 | --- | --- |
 | bcrypt login, lockout, generic 401, rotation, reuse detection, logout revocation | `backend/test/auth.test.ts` (9) |
-| Role gates, cross-book 404s, admin read-only, suspended account | `backend/test/rbac.test.ts` (6) |
+| Role gates, borrower-scoped 404s, admin read-only loan access, suspended account | `backend/test/rbac.test.ts` (6) |
 | AES-GCM round trip, tamper rejection, blind index normalisation, masking | `backend/test/encryption.test.ts` (5) |
 | Chain append, hash linkage, trigger blocks UPDATE/DELETE, `verifyAuditChain` | `backend/test/audit.test.ts` (4) |
 | Schedule maths, agreement hash, **download refuses a swapped file**, disbursement rules | `backend/test/loans.test.ts` (11) |
@@ -206,7 +206,7 @@ production build needs, not what this prototype claims.
 | --- | --- | --- | --- | --- |
 | R1 | A DBA can disable the audit triggers and recompute the chain | High | The prototype's threat model treats the database operator as trusted; the detection machinery is demonstrated instead | Anchor the chain head on a schedule (not by hand), and keep the anchor wallet key off the API host |
 | R2 | Refresh-cookie theft wins a window before revocation | High | The rotation + family revocation is the point being demonstrated | Bind tokens to a device fingerprint; require re-authentication for money movement |
-| R3 | No MFA, no step-up for approvals or holds | High | Out of scope for the brief | TOTP or WebAuthn for `lender`; step-up on release of a held movement |
+| R3 | No MFA, no step-up for approvals or holds | High | Out of scope for the brief | TOTP or WebAuthn for `staff`; step-up on release of a held movement |
 | R4 | A single approver can release a held payment | High | The separation of flag and hold is the demonstrated property | Two-person approval above a threshold |
 | R5 | PII is protected at rest but plaintext in the process, and one key protects everything | Medium | Key management is infrastructure, not application code | KMS/HSM with per-field keys and a rotation procedure using the `v1:` prefix |
 | R6 | Rate limits are per-process | Medium | Single-instance deployment is assumed | Shared store (Redis) for the limiters |
@@ -223,7 +223,7 @@ Named here so nobody assumes coverage:
 
 * Host compromise (root on the API or database host). At that point the attacker can read memory and
   mint tokens.
-* The lender's own device. A keylogger defeats every control above.
+* A staff member's own device. A keylogger defeats every control above.
 * Smart-contract economic attacks. `LoanLedger` stores no value, so there is nothing to drain — but it
   also cannot enforce repayment.
 * Regulatory obligations (data-subject export/erasure). There is deliberately no delete path for

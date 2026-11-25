@@ -5,7 +5,7 @@ import { query, queryOne } from '../../db/pool';
  * Advisory credit scoring (M5).
  *
  * The score is *advisory by construction*: nothing in the decision path reads
- * `credit_scores`, and the table carries `advisory_only = true`. A lender may
+ * `credit_scores`, and the table carries `advisory_only = true`. Staff may
  * approve a high-risk applicant; the record then shows they saw the warning.
  *
  * Two sources are possible and both are stored honestly:
@@ -277,7 +277,7 @@ const SCORE_SELECT = `
 /**
  * Scores a loan and stores the snapshot. Never throws when the ML service is
  * down: the fallback runs instead, because a scoring outage must not stop a
- * lender from working.
+ * staff from working.
  */
 export async function generateScore(loanId: string): Promise<ScoreResult> {
   const loan = await queryOne<ScoringLoan>(

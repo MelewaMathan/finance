@@ -6,7 +6,7 @@ import { app, createAdmin, register, request } from './helpers';
  * M1 -- role-based access control.
  *
  * The checks are enforced in middleware, not in the UI: a borrower must not be
- * able to reach lender screens, an admin must never be able to write, and a
+ * able to reach staff screens, an admin must never be able to write, and a
  * token that was not signed by this server is rejected outright.
  */
 describe('RBAC', () => {
@@ -47,7 +47,7 @@ describe('RBAC', () => {
     expect(response.body.error.code).toBe('FORBIDDEN');
   });
 
-  it('stops a lender from writing a borrower profile', async () => {
+  it('stops staff from writing a borrower profile', async () => {
     const lender = await register('lender@test.local', { role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Test Credit' });
     const response = await request(app)
       .put('/api/v1/me/profile')

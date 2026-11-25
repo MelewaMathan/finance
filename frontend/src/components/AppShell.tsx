@@ -46,14 +46,15 @@ const NAV_BY_ROLE: Record<'borrower' | 'staff' | 'admin', NavItem[]> = {
     { to: '/profile', label: 'My profile', icon: 'user' },
   ],
   staff: [
-    { to: '/enterprise', label: 'Dashboard', icon: 'home', end: true },
-    { to: '/enterprise/applications', label: 'Applications', icon: 'file' },
-    { to: '/enterprise/fraud', label: 'Fraud queue', icon: 'shield' },
+    { to: '/staff', label: 'Dashboard', icon: 'home', end: true },
+    { to: '/staff/applications', label: 'Applications', icon: 'file' },
+    { to: '/staff/fraud', label: 'Fraud queue', icon: 'shield' },
     { to: '/profile', label: 'My profile', icon: 'user' },
   ],
   admin: [
     { to: '/admin', label: 'Overview', icon: 'home', end: true },
     { to: '/admin/admins', label: 'Admins', icon: 'user' },
+    { to: '/admin/loan-settings', label: 'Loan settings', icon: 'check' },
     { to: '/admin/access-requests', label: 'Access requests', icon: 'shield' },
     { to: '/admin/audit', label: 'Audit log', icon: 'report' },
     { to: '/admin/timeline', label: 'Timeline', icon: 'clock' },

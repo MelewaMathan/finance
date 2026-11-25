@@ -11,7 +11,7 @@ import { generateScore, getLatestScore } from './scoring.service';
  *
  * Reading is open to anyone who may see the loan (borrower, staff, auditor):
  * a borrower is entitled to know what the model said about them. Re-running
- * the score is the enterprise's call, and every run is audited with its source.
+ * the score is a staff decision, and every run is audited with its source.
  */
 export const scoringRouter = Router();
 

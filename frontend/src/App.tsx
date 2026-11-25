@@ -10,9 +10,9 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { BorrowerDashboard } from './pages/borrower/BorrowerDashboard';
 import { ApplyLoanPage } from './pages/borrower/ApplyLoanPage';
 import { MyLoansPage } from './pages/borrower/MyLoansPage';
-import { LenderDashboard as EnterpriseDashboard } from './pages/lender/LenderDashboard';
-import { ApplicationsPage } from './pages/lender/ApplicationsPage';
-import { FraudQueuePage } from './pages/lender/FraudQueuePage';
+import { StaffDashboard } from './pages/staff/StaffDashboard';
+import { ApplicationsPage } from './pages/staff/ApplicationsPage';
+import { FraudQueuePage } from './pages/staff/FraudQueuePage';
 import { LoanDetailPage } from './pages/shared/LoanDetailPage';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { AuditLogPage } from './pages/admin/AuditLogPage';
@@ -21,6 +21,7 @@ import { IntegrityPage } from './pages/admin/IntegrityPage';
 import { AccessRequestsPage } from './pages/admin/AccessRequestsPage';
 import { SetPasswordPage } from './pages/auth/SetPasswordPage';
 import { AdminsPage } from './pages/admin/AdminsPage';
+import { LoanSettingsPage } from './pages/admin/LoanSettingsPage';
 
 /** Blocks the app until the session is known; redirects anonymous users. */
 function RequireAuth({ children, allowPasswordChange = false }: { children: ReactNode; allowPasswordChange?: boolean }) {
@@ -107,15 +108,15 @@ export default function App() {
         />
 
         <Route
-          path="/enterprise"
+          path="/staff"
           element={
             <RequireRole role="staff">
-              <EnterpriseDashboard />
+              <StaffDashboard />
             </RequireRole>
           }
         />
         <Route
-          path="/enterprise/applications"
+          path="/staff/applications"
           element={
             <RequireRole role="staff">
               <ApplicationsPage />
@@ -123,7 +124,7 @@ export default function App() {
           }
         />
         <Route
-          path="/enterprise/loans/:id"
+          path="/staff/loans/:id"
           element={
             <RequireRole role="staff">
               <LoanDetailPage />
@@ -131,7 +132,7 @@ export default function App() {
           }
         />
         <Route
-          path="/enterprise/fraud"
+          path="/staff/fraud"
           element={
             <RequireRole role="staff">
               <FraudQueuePage />
@@ -184,6 +185,14 @@ export default function App() {
           element={
             <RequireRole role="admin">
               <AdminsPage />
+            </RequireRole>
+          }
+        />
+        <Route
+          path="/admin/loan-settings"
+          element={
+            <RequireRole role="admin">
+              <LoanSettingsPage />
             </RequireRole>
           }
         />

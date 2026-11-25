@@ -12,7 +12,7 @@ import { getStatement, renderStatementPdf, statementCsv } from './statement.serv
  * Repayment and statement routes.
  *
  * A held repayment returns 202: the claim was recorded, the money was not
- * applied, and the lender must review it. That distinction matters in a
+ * applied, and staff must review it. That distinction matters in a
  * dispute, so it is explicit in the status code rather than hidden in a
  * success payload.
  */

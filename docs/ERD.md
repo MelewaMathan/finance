@@ -1,6 +1,6 @@
 # Entity-relationship model
 
-Fourteen tables in five groups: identity, lending, money, detection, and evidence. The model follows three
+Fifteen tables in five groups: identity, lending, money, detection, and evidence. The model follows three
 rules that explain most of its shape:
 
 1. **Personal data is encrypted in place** (`*_enc`) and searchable only through a blind index (`*_bi`).
@@ -11,9 +11,9 @@ rules that explain most of its shape:
 ```mermaid
 erDiagram
     USERS ||--o| BORROWER_PROFILES : "has (borrowers)"
-    USERS ||--o| LENDER_PROFILES : "has (lenders)"
+    USERS ||--o| STAFF_PROFILES : "has (staff metadata)"
     USERS ||--o{ REFRESH_TOKENS : "holds sessions"
-    USERS ||--o{ LOANS : "lends (lender_id)"
+    USERS ||--o{ LOANS : "legacy staff link (nullable)"
     USERS ||--o{ LOANS : "borrows (borrower_id)"
     LOANS ||--o{ LOAN_INSTALLMENTS : "scheduled as"
     LOANS ||--o{ TRANSACTIONS : "money movements"
@@ -31,7 +31,7 @@ erDiagram
         uuid id PK
         text email UK "stored lower-case (CHECK constraint)"
         text password_hash "bcrypt, cost 12"
-        user_role role "borrower | lender | admin"
+        user_role role "borrower | staff | admin"
         text full_name
         user_status status "active | suspended | closed"
         integer failed_attempts
@@ -54,12 +54,19 @@ erDiagram
         jsonb consent_flags
     }
 
-    LENDER_PROFILES {
+    STAFF_PROFILES {
         uuid user_id PK, FK
         text staff_id
+    }
+
+    INSTITUTION_LOAN_SETTINGS {
+        boolean id PK "singleton"
+        integer interest_rate_bps
+        bigint min_principal_cents
         bigint max_principal_cents
-        integer default_rate_bps
-        integer default_penalty_bps_per_day
+        integer max_installments
+        text[] allowed_frequencies
+        text institution_name
     }
 
     REFRESH_TOKENS {
@@ -77,7 +84,7 @@ erDiagram
     LOANS {
         uuid id PK
         text ref UK "SMF-2026-000123"
-        uuid lender_id FK
+        uuid lender_id FK "nullable legacy value; new loans leave it null"
         uuid borrower_id FK
         bigint principal_cents
         integer term_count
@@ -234,9 +241,9 @@ erDiagram
 
 ## Reading the diagram
 
-**Identity group.** `users` is the only table with a credential. Borrower and lender profiles are separate
-one-to-one tables because their fields have nothing in common: a borrower has PII that must be encrypted, a
-lender has lending limits. Keeping them apart means a query for one never even reads the other's columns.
+**Identity group.** `users` is the only table with a credential. Borrower and staff profiles are separate
+one-to-one tables because their fields have nothing in common. Institution-wide terms live in the singleton
+`institution_loan_settings` row, rather than in staff profiles.
 
 **Why `*_bi` is indexed but not unique.** A duplicate national ID or phone number is a *fraud signal*, not a
 database error. A unique constraint would reject the second account and hide the problem; the blind index lets
@@ -269,7 +276,7 @@ that time even if the whole database were later replaced.
 
 | Type | Values |
 | --- | --- |
-| `user_role` | `borrower`, `lender`, `admin` |
+| `user_role` | `borrower`, `staff`, `admin` |
 | `user_status` | `active`, `suspended`, `closed` |
 | `loan_status` | `pending`, `under_review`, `approved`, `rejected`, `held`, `disbursed`, `active`, `settled`, `defaulted`, `cancelled` |
 | `repayment_frequency` | `daily`, `weekly`, `monthly` |
@@ -285,7 +292,8 @@ that time even if the whole database were later replaced.
 
 * `users_email_lowercase` — the API lower-cases emails; the schema enforces it, so two accounts cannot differ
   only by case.
-* `loans_distinct_parties` — a lender cannot lend to themselves.
+* `loans_distinct_parties` — historical staff and borrower IDs cannot be equal; new loan rows use a null
+  legacy staff link.
 * `transactions_mobile_code_consistent` — a `mobile_money` payment must carry a reference; `cash` need not.
 * All money columns are `CHECK (… >= 0)` or `> 0`; `fraud_score` is constrained to 0–1, so a bug that writes
   `7.5` fails at the database rather than in a report.

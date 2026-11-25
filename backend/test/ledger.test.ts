@@ -37,7 +37,6 @@ describe('ledger', () => {
   /** Walks the loan to a cleared disbursement and returns the loan id. */
   async function disbursedLoan(borrower: Session, lenderSession: Session): Promise<string> {
     const created = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
-      lenderId: lenderSession.userId,
       principalCents: 500_000,
       termCount: 4,
       frequency: 'weekly',

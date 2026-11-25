@@ -33,7 +33,7 @@ describe('staff login approval flow', () => {
       [email, hash],
     );
     if (!row) throw new Error('Could not insert staff user');
-    await query('INSERT INTO lender_profiles (user_id) VALUES ($1)', [row.id]);
+    await query('INSERT INTO staff_profiles (user_id) VALUES ($1)', [row.id]);
     return { userId: row.id, token: null };
   }
 

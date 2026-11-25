@@ -11,7 +11,7 @@ import { listLoans, STATUS_LABEL, STATUS_TONE, type LoanSummary } from '../../li
 
 /**
  * Borrower dashboard: identity completeness plus the live state of their
- * loan book.
+ * loan overview.
  */
 export function BorrowerDashboard() {
   const { user, profile } = useAuth();

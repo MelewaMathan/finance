@@ -9,7 +9,7 @@ import { authHeader, createAdmin, kraPinForTest, register, request, app, type Se
 /**
  * M2 -- loan application and management.
  *
- * Covers the money maths, the authorisation boundaries between books, the
+ * Covers the money maths, the institution-wide authorisation boundaries, the
  * approve -> PDF agreement -> SHA-256 chain, and the fraud-gated
  * disbursement path (no duplicate receipt may clear).
  */
@@ -38,12 +38,11 @@ describe('loans', () => {
     return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
-  async function applyLoan(borrower: Session, lenderId: string, overrides: Record<string, unknown> = {}) {
+  async function applyLoan(borrower: Session, overrides: Record<string, unknown> = {}) {
     return request(app)
       .post('/api/v1/loans')
       .set(...authHeader(borrower))
       .send({
-        lenderId,
         principalCents: 500_000,
         termCount: 4,
         frequency: 'weekly',
@@ -53,7 +52,7 @@ describe('loans', () => {
   }
 
   async function approvedLoan(borrower: Session, lenderSession: Session, overrides: Record<string, unknown> = {}) {
-    const created = await applyLoan(borrower, lenderSession.userId, overrides);
+    const created = await applyLoan(borrower, overrides);
     expect(created.status).toBe(201);
     const loanId = created.body.loan.id as string;
 
@@ -75,7 +74,7 @@ describe('loans', () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
 
-    const response = await applyLoan(borrower, lenderSession.userId);
+    const response = await applyLoan(borrower);
     expect(response.status).toBe(201);
 
     const loan = response.body.loan;
@@ -87,11 +86,52 @@ describe('loans', () => {
     expect(loan.totalRepayableCents).toBe(700_000);
     expect(loan.installments).toEqual([]);
     expect(loan.borrower.id).toBe(borrower.userId);
+    const stored = await query<{ lender_id: string | null }>('SELECT lender_id FROM loans WHERE id = $1', [loan.id]);
+    expect(stored[0].lender_id).toBeNull();
   });
 
-  it('refuses applications from lenders', async () => {
+  it('ignores a client-sent lenderId and still assigns institution settings', async () => {
+    const borrower = await borrowerWithProfile();
+    const staff = await lender();
+    const response = await applyLoan(borrower, { lenderId: staff.userId });
+
+    expect(response.status).toBe(201);
+    expect(response.body.loan.rateBps).toBe(1000);
+    const stored = await query<{ lender_id: string | null }>('SELECT lender_id FROM loans WHERE id = $1', [
+      response.body.loan.id,
+    ]);
+    expect(stored[0].lender_id).toBeNull();
+  });
+
+  it('keeps stored terms and reads legacy loans after institution settings change', async () => {
+    const borrower = await borrowerWithProfile();
+    const staff = await lender();
+    const applied = await applyLoan(borrower);
+    expect(applied.status).toBe(201);
+
+    await query('UPDATE loans SET lender_id = $1 WHERE id = $2', [staff.userId, applied.body.loan.id]);
+    await query(
+      'UPDATE institution_loan_settings SET interest_rate_bps = 1500, max_principal_cents = 1000000 WHERE id = true',
+    );
+
+    const borrowerRead = await request(app)
+      .get(`/api/v1/loans/${applied.body.loan.id}`)
+      .set(...authHeader(borrower));
+    const staffRead = await request(app)
+      .get(`/api/v1/loans/${applied.body.loan.id}`)
+      .set(...authHeader(staff));
+    expect(borrowerRead.status).toBe(200);
+    expect(staffRead.status).toBe(200);
+    expect(borrowerRead.body.loan).toMatchObject({
+      rateBps: 1000,
+      termCount: 4,
+      totalRepayableCents: 700_000,
+    });
+  });
+
+  it('refuses applications from staff', async () => {
     const lenderSession = await lender();
-    const lenderAttempt = await applyLoan(lenderSession, lenderSession.userId);
+    const lenderAttempt = await applyLoan(lenderSession);
     expect(lenderAttempt.status).toBe(403);
   });
 
@@ -139,8 +179,8 @@ describe('loans', () => {
   it('rejects staff and admins from creating borrower loan applications', async () => {
     const lenderSession = await lender();
     const admin = await createAdmin('admin-loan-attempt@loans.test');
-    const staffAttempt = await applyLoan(lenderSession, lenderSession.userId);
-    const adminAttempt = await applyLoan(admin, lenderSession.userId);
+    const staffAttempt = await applyLoan(lenderSession);
+    const adminAttempt = await applyLoan(admin);
 
     expect(staffAttempt.status).toBe(403);
     expect(adminAttempt.status).toBe(403);
@@ -153,7 +193,7 @@ describe('loans', () => {
     const borrower = await borrowerWithProfile(email);
     const lenderSession = await lender();
     const admin = await createAdmin('kra-private-admin@loans.test');
-    const created = await applyLoan(borrower, lenderSession.userId);
+    const created = await applyLoan(borrower);
     expect(created.status).toBe(201);
 
     const staffLoans = await request(app).get('/api/v1/loans').set(...authHeader(lenderSession));
@@ -163,35 +203,51 @@ describe('loans', () => {
     expect(JSON.stringify(adminLoans.body)).not.toContain(kraPin);
   });
 
-  it('enforces the lender maximum principal', async () => {
+  it('enforces institution amount, installment and frequency limits', async () => {
     const borrower = await borrowerWithProfile();
-    const lenderSession = await lender();
-    await query('UPDATE lender_profiles SET max_principal_cents = 100000 WHERE user_id = $1', [lenderSession.userId]);
+    await query(
+      `UPDATE institution_loan_settings
+          SET min_principal_cents = 30000, max_principal_cents = 1000000,
+              max_installments = 6, allowed_frequencies = ARRAY['weekly']
+        WHERE id = true`,
+    );
 
-    const response = await applyLoan(borrower, lenderSession.userId, { principalCents: 200_000 });
-    expect(response.status).toBe(422);
-    expect(response.body.error.message).toMatch(/up to/i);
+    const tooSmall = await applyLoan(borrower, { principalCents: 29_999 });
+    const tooLarge = await applyLoan(borrower, { principalCents: 1_000_001 });
+    const tooManyInstallments = await applyLoan(borrower, { termCount: 7 });
+    const unavailableFrequency = await applyLoan(borrower, { frequency: 'daily' });
+    const valid = await applyLoan(borrower, { principalCents: 30_000, termCount: 6 });
+    expect(tooSmall.status).toBe(422);
+    expect(tooLarge.status).toBe(422);
+    expect(tooManyInstallments.status).toBe(422);
+    expect(unavailableFrequency.status).toBe(422);
+    expect(valid.status).toBe(201);
   });
 
-  it('scopes the queue to each book and hides other borrowers loans', async () => {
+  it('shows all institution applications to staff and only each borrower their own', async () => {
     const borrower = await borrowerWithProfile();
     const otherBorrower = await borrowerWithProfile('other@loans.test');
     const lenderSession = await lender();
-    const otherLender = await lender('lender2@loans.test');
+    const otherStaff = await lender('staff2@loans.test');
     const admin = await createAdmin('admin@loans.test');
 
-    const mine = await applyLoan(borrower, lenderSession.userId);
+    const mine = await applyLoan(borrower);
     expect(mine.status).toBe(201);
-    await applyLoan(otherBorrower, otherLender.userId);
+    await applyLoan(otherBorrower);
 
     const ownQueue = await request(app).get('/api/v1/loans').set(...authHeader(lenderSession));
-    expect(ownQueue.body.total).toBe(1);
-    expect(ownQueue.body.items[0].id).toBe(mine.body.loan.id);
+    expect(ownQueue.body.total).toBe(2);
+    const otherStaffQueue = await request(app).get('/api/v1/loans').set(...authHeader(otherStaff));
+    expect(otherStaffQueue.body.total).toBe(2);
 
     const stranger = await request(app)
       .get(`/api/v1/loans/${mine.body.loan.id}`)
       .set(...authHeader(otherBorrower));
     expect(stranger.status).toBe(404);
+
+    const borrowerLoans = await request(app).get('/api/v1/loans').set(...authHeader(borrower));
+    expect(borrowerLoans.body.total).toBe(1);
+    expect(borrowerLoans.body.items[0].id).toBe(mine.body.loan.id);
 
     const auditView = await request(app).get('/api/v1/loans').set(...authHeader(admin));
     expect(auditView.status).toBe(200);
@@ -201,7 +257,7 @@ describe('loans', () => {
   it('requires identity verification before approval', async () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
-    const created = await applyLoan(borrower, lenderSession.userId);
+    const created = await applyLoan(borrower);
 
     const early = await request(app)
       .post(`/api/v1/loans/${created.body.loan.id}/decision`)
@@ -215,6 +271,7 @@ describe('loans', () => {
   it('approving writes a schedule that sums exactly to the total and a hashed PDF', async () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
+    await query("UPDATE institution_loan_settings SET institution_name = 'Test Institution' WHERE id = true");
     const { loanId, loan } = await approvedLoan(borrower, lenderSession);
 
     expect(loan.status).toBe('approved');
@@ -252,6 +309,7 @@ describe('loans', () => {
 
     const bytes = download.body as Buffer;
     expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
+    expect(bytes.toString('latin1')).toContain('Test Institution');
     // The stored fingerprint must match the bytes actually served.
     expect(sha256Hex(bytes)).toBe(documents[0].sha256);
     expect(loan.agreement?.sha256).toBe(documents[0].sha256);
@@ -302,7 +360,7 @@ describe('loans', () => {
   it('rejects with a note and refuses a second decision', async () => {
     const borrower = await borrowerWithProfile();
     const lenderSession = await lender();
-    const created = await applyLoan(borrower, lenderSession.userId);
+    const created = await applyLoan(borrower);
     const loanId = created.body.loan.id;
 
     const rejected = await request(app)

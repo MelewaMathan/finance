@@ -19,7 +19,7 @@ flowchart LR
     S -->|"schedule, statement, score, proof badge"| B
 
     L -->|"decisions, disbursements, review notes"| S
-    S -->|"book, alerts, fraud queue, proofs"| L
+    S -->|"applications, alerts, fraud queue, proofs"| L
 
     A -->|"search filters, integrity runs, export requests"| S
     S -->|"audit rows, timelines, verification verdicts, files"| A
@@ -142,17 +142,17 @@ turn one into the other.
 | IP address, user agent | technical | plaintext | only to the admin | no | no | yes |
 | Record hash, chain root | evidence | `char(64)` | yes | no | **yes** | yes (as `after_hash`) |
 | Model risk score | derived | `numeric(5,4)` | yes | produces it | no | no (only the flag) |
-| Fraud flag + reason | derived | jsonb | to the lender and admin | no | no | yes |
+| Fraud flag + reason | derived | jsonb | to institution staff and admin | no | no | yes |
 
 The chain column is the design's central claim: **every row before it may be rich; the chain may only ever
 contain hashes and timestamps.** A public ledger that listed amounts would let anyone graph a borrower's
-credit history — which, for a customer of an informal lender, is a safety problem, not just a privacy one.
+credit history — which, for a customer of a financial service provider, is a safety problem, not just a privacy one.
 
 ## Retention
 
 * `audit_log` is never deleted; there is no code path that would do it, and no role has the privilege.
 * `refresh_tokens` accumulate as revoked rows: cheap, and they are the evidence for reuse detection.
-* Documents are kept for the life of the loan plus whatever the lender's jurisdiction requires; a deletion
+* Documents are kept for the life of the loan plus whatever the institution's jurisdiction requires; a deletion
   would be an audited action in a real deployment (this prototype has no delete path at all).
 * `integrity_checks` keeps every run; the history is how an admin shows the record was verified *then*, not
   only now.

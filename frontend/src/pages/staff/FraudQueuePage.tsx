@@ -282,7 +282,7 @@ export function FraudQueuePage() {
                     {flag.loanRef ? (
                       <>
                         {' · '}
-                        <Link className="font-medium text-brand-700 hover:underline" to={`/enterprise/loans/${flag.loanId}`}>
+                        <Link className="font-medium text-brand-700 hover:underline" to={`/staff/loans/${flag.loanId}`}>
                           {flag.loanRef}
                         </Link>
                       </>

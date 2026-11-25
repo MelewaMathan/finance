@@ -8,6 +8,7 @@ import { decryptField, encryptField, maskValue, sha256Hex } from '../../lib/cryp
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../lib/errors';
 import { renderPdf, type PdfLine } from '../../lib/pdf';
 import { auditRequest } from '../audit/audit.service';
+import { getInstitutionLoanSettings } from '../admin/loanSettings.service';
 import {
   detectDuplicateDisbursement,
   detectRapidApplications,
@@ -52,7 +53,6 @@ type LoanStatus =
 interface LoanRecord {
   id: string;
   ref: string;
-  lender_id: string;
   borrower_id: string;
   principal_cents: number;
   term_count: number;
@@ -77,8 +77,7 @@ interface LoanRecord {
   created_at: Date;
   borrower_name: string;
   borrower_email: string;
-  lender_name: string;
-  lender_institution: string | null;
+  institution_name: string;
   /** Present only when the query joined the latest credit score. */
   score_value?: number | null;
   score_risk_level?: 'low' | 'medium' | 'high' | null;
@@ -118,12 +117,9 @@ const LOAN_SELECT = `
   SELECT l.*,
          b.full_name AS borrower_name,
          b.email     AS borrower_email,
-         w.full_name AS lender_name,
-         lp.staff_id AS lender_institution
+         (SELECT institution_name FROM institution_loan_settings WHERE id = true) AS institution_name
     FROM loans l
     JOIN users b ON b.id = l.borrower_id
-    JOIN users w ON w.id = l.lender_id
-    LEFT JOIN lender_profiles lp ON lp.user_id = l.lender_id
 `;
 
 const LATERAL_SCORE = `
@@ -154,7 +150,7 @@ export function addPeriods(from: Date, frequency: 'daily' | 'weekly' | 'monthly'
 
 /**
  * Flat interest on the original principal, charged once per period
- * (assumption A4 in the plan: informal lenders quote a flat rate per period,
+ * (institution settings define the flat rate per period,
  * not an amortised APR). Rounding stays in integer cents.
  */
 export function computeTotalRepayable(principalCents: number, rateBps: number, termCount: number): number {
@@ -250,7 +246,11 @@ function toSummary(row: LoanRecord, outstandingCents: number | null = null) {
     purpose: row.purpose,
     outstandingCents,
     borrower: { id: row.borrower_id, fullName: row.borrower_name, email: row.borrower_email },
-    lender: { id: row.lender_id, fullName: row.lender_name, institutionName: row.lender_institution },
+    institution: {
+      id: null,
+      fullName: row.institution_name,
+      institutionName: row.institution_name,
+    },
     identityVerified: Boolean(row.identity_verified_at),
     agreementSha256: row.agreement_sha256,
     heldReason: row.held_reason,
@@ -264,73 +264,45 @@ function toSummary(row: LoanRecord, outstandingCents: number | null = null) {
   };
 }
 
-/** Loads a loan and enforces visibility: own book, own loan, or auditor. */
+/** Loads a loan and enforces borrower ownership; staff and admins can view institution loans. */
 export async function loadVisibleLoan(actor: Actor, loanId: string): Promise<LoanRecord> {
   const loan = await queryOne<LoanRecord>(`${LOAN_SELECT} WHERE l.id = $1`, [loanId]);
   if (!loan) throw notFound('Loan not found');
 
   if (actor.role === 'borrower' && loan.borrower_id !== actor.id) throw notFound('Loan not found');
-  if (actor.role === 'staff' && loan.lender_id !== actor.id) throw notFound('Loan not found');
   return loan;
-}
-
-function assertStaffOwns(actor: Actor, loan: LoanRecord): void {
-  if (loan.lender_id !== actor.id) throw notFound('Loan not found');
-}
-
-export async function listLenderOptions() {
-  const rows = await query<{
-    id: string;
-    full_name: string;
-    staff_id: string | null;
-    default_rate_bps: number | null;
-    max_principal_cents: number | null;
-  }>(
-    `SELECT u.id, u.full_name, lp.staff_id, lp.default_rate_bps, lp.max_principal_cents
-       FROM users u
-       LEFT JOIN lender_profiles lp ON lp.user_id = u.id
-      WHERE u.role = 'staff' AND u.status = 'active'
-      ORDER BY u.full_name`,
-  );
-  return rows.map((row) => ({
-    id: row.id,
-    fullName: row.full_name,
-    institutionName: row.staff_id,
-    defaultRateBps: row.default_rate_bps ?? 1000,
-    maxPrincipalCents: row.max_principal_cents ?? 50_000_00,
-  }));
 }
 
 export async function createApplication(actor: Actor, input: ApplyLoanInput, req: Request) {
   if (actor.role !== 'borrower') throw forbidden('Only borrowers can apply for a loan');
 
-  const lender = await queryOne<{ id: string; default_rate_bps: number | null; max_principal_cents: number | null }>(
-    `SELECT u.id, lp.default_rate_bps, lp.max_principal_cents
-       FROM users u LEFT JOIN lender_profiles lp ON lp.user_id = u.id
-      WHERE u.id = $1 AND u.role = 'staff' AND u.status = 'active'`,
-    [input.lenderId],
-  );
-  if (!lender) throw badRequest('Select an active staff member');
-
-  const maxPrincipal = lender.max_principal_cents ?? 50_000_00;
-  if (input.principalCents > maxPrincipal) {
-    throw unprocessable(`This lender lends up to ${(maxPrincipal / 100).toFixed(0)} KES per loan`);
+  const settings = await getInstitutionLoanSettings();
+  if (input.principalCents < settings.minPrincipalCents) {
+    throw unprocessable(`Minimum loan amount is ${(settings.minPrincipalCents / 100).toFixed(0)} KES`);
+  }
+  if (input.principalCents > settings.maxPrincipalCents) {
+    throw unprocessable(`Maximum loan amount is ${(settings.maxPrincipalCents / 100).toFixed(0)} KES`);
+  }
+  if (input.termCount > settings.maxInstallments) {
+    throw unprocessable(`Maximum number of installments is ${settings.maxInstallments}`);
+  }
+  if (!settings.allowedFrequencies.includes(input.frequency)) {
+    throw unprocessable('This repayment frequency is not currently available');
   }
 
-  const rateBps = lender.default_rate_bps ?? 1000;
+  const rateBps = settings.interestRateBps;
   const totalRepayable = computeTotalRepayable(input.principalCents, rateBps, input.termCount);
 
   const created = await queryOne<{ id: string }>(
     `INSERT INTO loans
-       (ref, lender_id, borrower_id, principal_cents, term_count, frequency, rate_bps, purpose,
+       (ref, borrower_id, principal_cents, term_count, frequency, rate_bps, purpose,
         collateral_desc, guarantor_name_enc, guarantor_phone_enc, guarantor_credit,
         total_repayable_cents, status)
      VALUES
        ('SMF-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('loan_ref_seq')::text, 6, '0'),
-        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'pending')
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'pending')
      RETURNING id`,
     [
-      lender.id,
       actor.id,
       input.principalCents,
       input.termCount,
@@ -346,10 +318,10 @@ export async function createApplication(actor: Actor, input: ApplyLoanInput, req
   );
   if (!created) throw new Error('Loan insert returned no row');
 
-  // Rule R4: rapid repeated applications. Advisory for the lender, not a block.
+  // Rule R4: rapid repeated applications. Advisory for staff, not a block.
   await detectRapidApplications({ loanId: created.id, borrowerId: actor.id });
 
-  // Score at submission so the lender sees an advisory risk band immediately.
+  // Score at submission so staff see an advisory risk band immediately.
   // A scoring failure must not lose the application, hence the catch.
   let score: ScoreResult | null = null;
   try {
@@ -364,7 +336,6 @@ export async function createApplication(actor: Actor, input: ApplyLoanInput, req
     termCount: input.termCount,
     frequency: input.frequency,
     rateBps,
-    lenderId: lender.id,
     score: score?.score ?? null,
     scoreSource: score?.modelSource ?? null,
   });
@@ -379,9 +350,6 @@ export async function listLoans(actor: Actor, filters: LoanListQuery) {
   if (actor.role === 'borrower') {
     params.push(actor.id);
     conditions.push(`l.borrower_id = $${params.length}`);
-  } else if (actor.role === 'staff') {
-    params.push(actor.id);
-    conditions.push(`l.lender_id = $${params.length}`);
   }
   if (filters.status) {
     params.push(filters.status);
@@ -497,9 +465,8 @@ export async function getLoan(actor: Actor, loanId: string) {
 }
 
 export async function verifyIdentity(actor: Actor, loanId: string, note: string | undefined, req: Request) {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can verify identity');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can verify identity');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'pending' && loan.status !== 'under_review') {
     throw conflict(`Cannot verify identity on a ${loan.status} loan`);
@@ -521,7 +488,12 @@ export async function verifyIdentity(actor: Actor, loanId: string, note: string 
 }
 
 /** Renders the agreement PDF bytes. Content is deterministic for a given loan. */
-function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: Date): Buffer {
+function renderAgreement(
+  loan: LoanRecord,
+  schedule: ScheduleRow[],
+  decidedAt: Date,
+  institutionName: string,
+): Buffer {
   const money = (cents: number) => `KES ${(cents / 100).toLocaleString('en-KE', { minimumFractionDigits: 2 })}`;
   const guarantor = loan.guarantor_name_enc ? decryptField(loan.guarantor_name_enc) : null;
 
@@ -531,7 +503,7 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
     { text: `Issued ${decidedAt.toISOString().slice(0, 10)}`, size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'PARTIES', size: 10, bold: true },
-    { text: `Lender: ${config.INSTITUTION_NAME}` },
+    { text: `Institution: ${institutionName}` },
     { text: `Borrower: ${loan.borrower_name}` },
     { text: '', gapBefore: 8 },
     { text: 'LOAN TERMS', size: 10, bold: true },
@@ -559,13 +531,13 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
     { text: 'RECORDS AND VERIFICATION', size: 10, bold: true },
     {
       text:
-        'This agreement is generated by SecureMicrofinance. Its SHA-256 fingerprint is stored with the loan and ' +
+        `This agreement is generated by ${institutionName}. Its SHA-256 fingerprint is stored with the loan and ` +
         'shown to both parties. Every disbursement and repayment is hashed and anchored on a public ledger, so a ' +
         'receipt cannot be altered after the fact without breaking verification.',
     },
     { text: 'Sensitive identity data is encrypted at rest and only ever displayed masked.', gapBefore: 4 },
     { text: '', gapBefore: 14 },
-    { text: 'Lender signature: ______________________      Borrower signature: ______________________', size: 9 },
+    { text: 'Institution representative: ______________________      Borrower signature: ______________________', size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'Generated document - synthetic data, demo deployment.', size: 8 },
   );
@@ -574,9 +546,8 @@ function renderAgreement(loan: LoanRecord, schedule: ScheduleRow[], decidedAt: D
 }
 
 export async function decide(actor: Actor, loanId: string, input: DecisionInput, req: Request) {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can decide on a loan');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can decide on a loan');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'pending' && loan.status !== 'under_review') {
     throw conflict(`This loan is already ${loan.status}`);
@@ -614,7 +585,13 @@ export async function decide(actor: Actor, loanId: string, input: DecisionInput,
 
   // Bytes are rendered before the transaction: a file-system failure must not
   // leave an "approved" loan with no agreement.
-  const pdf = renderAgreement({ ...loan, rate_bps: rateBps, total_repayable_cents: totalRepayable }, schedule, decidedAt);
+  const settings = await getInstitutionLoanSettings();
+  const pdf = renderAgreement(
+    { ...loan, rate_bps: rateBps, total_repayable_cents: totalRepayable },
+    schedule,
+    decidedAt,
+    settings.institutionName,
+  );
   const digest = sha256Hex(pdf);
 
   const dir = path.resolve(config.storageDir, 'agreements');
@@ -673,13 +650,12 @@ export async function decide(actor: Actor, loanId: string, input: DecisionInput,
  * Releases the money and anchors the disbursement hash on-chain.
  *
  * A held flag (duplicate reference, duplicate disbursement, ...) parks the
- * loan in `held` instead of clearing it: the lender sees the alert and
+ * loan in `held` instead of clearing it: staff see the alert and
  * decides, which is exactly the "fraud detection with holds" requirement.
  */
 export async function disburse(actor: Actor, loanId: string, input: DisburseInput, req: Request) {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can disburse');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can disburse');
   const loan = await loadVisibleLoan(actor, loanId);
-  assertStaffOwns(actor, loan);
 
   if (loan.status !== 'approved') {
     throw conflict(`Only an approved loan can be disbursed (this loan is ${loan.status})`);

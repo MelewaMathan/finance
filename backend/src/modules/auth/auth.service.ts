@@ -111,7 +111,7 @@ export async function register(
     }
 
     if (input.role === 'staff') {
-      await client.query('INSERT INTO lender_profiles (user_id, staff_id) VALUES ($1, $2)', [
+      await client.query('INSERT INTO staff_profiles (user_id, staff_id) VALUES ($1, $2)', [
         created.id,
         input.staffId ?? null,
       ]);

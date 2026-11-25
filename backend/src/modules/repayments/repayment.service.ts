@@ -269,7 +269,7 @@ export async function recordRepayment(actor: Actor, loanId: string, input: Repay
     settled = await applyRepayment(loanId, created.id, input.amountCents, payloadHash);
   } catch (error) {
     // The claim was recorded but the money could not be applied; keep the row
-    // so the lender sees it as rejected rather than vanishing.
+    // so staff can see it was rejected rather than vanishing.
     await query("UPDATE transactions SET status = 'rejected', hold_reason = 'Application failed' WHERE id = $1", [
       created.id,
     ]);

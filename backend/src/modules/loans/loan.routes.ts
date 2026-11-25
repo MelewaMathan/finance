@@ -11,10 +11,10 @@ import {
   disburse,
   getAgreementFile,
   getLoan,
-  listLenderOptions,
   listLoans,
   verifyIdentity,
 } from './loan.service';
+import { getInstitutionLoanSettings } from '../admin/loanSettings.service';
 import {
   applyLoanSchema,
   decisionSchema,
@@ -30,9 +30,7 @@ import {
 /**
  * Loan routes.
  *
- * Authorisation is layered: requireRole gates the endpoint, and the service
- * re-checks that the loan belongs to the caller's book. A lender guessing a
- * UUID from another book gets 404, not 403 -- we do not confirm existence.
+ * Borrower visibility is checked per loan; institution staff review all loans.
  */
 export const loansRouter = Router();
 
@@ -58,8 +56,8 @@ async function requireCompleteBorrowerProfile(
   next();
 }
 
-loansRouter.get('/lenders', requireAuth, async (_req, res) => {
-  res.json({ items: await listLenderOptions() });
+loansRouter.get('/loan-settings', requireAuth, async (_req, res) => {
+  res.json({ settings: await getInstitutionLoanSettings() });
 });
 
 loansRouter.post(

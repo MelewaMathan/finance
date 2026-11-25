@@ -1,10 +1,9 @@
 import { renderPdf, type PdfLine } from '../../lib/pdf';
 import { formatMoneyForDocument } from '../../lib/format';
-import { config } from '../../config/env';
 import { getLoan, type Actor } from '../loans/loan.service';
 
 /**
- * Borrower/lender statements and the auditor-facing forensic report share
+ * Borrower and institution statements share
  * this shape: one immutable snapshot of terms, schedule, payments and totals
  * at the moment of generation.
  */
@@ -15,7 +14,7 @@ export async function getStatement(actor: Actor, loanId: string) {
     ref: loan.ref,
     status: loan.status,
     borrower: { fullName: loan.borrower.fullName, email: loan.borrower.email },
-    lender: { fullName: loan.lender.fullName, institutionName: loan.lender.institutionName },
+    institution: { name: loan.institution.institutionName },
     terms: {
       principalCents: loan.principalCents,
       rateBps: loan.rateBps,
@@ -45,7 +44,7 @@ export async function renderStatementPdf(actor: Actor, loanId: string): Promise<
     { text: `Status: ${statement.status} · Generated ${statement.generatedAt.slice(0, 19).replace('T', ' ')} UTC`, size: 9 },
     { text: '', gapBefore: 10 },
     { text: 'PARTIES', size: 10, bold: true },
-    { text: `Lender: ${config.INSTITUTION_NAME}` },
+    { text: `Institution: ${statement.institution.name}` },
     { text: `Borrower: ${statement.borrower.fullName}` },
     { text: '', gapBefore: 8 },
     { text: 'TERMS', size: 10, bold: true },
@@ -104,11 +103,11 @@ export function statementCsv(statement: Statement): string {
   };
 
   const rows: string[] = [
-    'SecureMicrofinance loan statement',
+    `${statement.institution.name} loan statement`,
     `Reference,${cell(statement.ref)}`,
     `Generated,${cell(statement.generatedAt)}`,
     `Borrower,${cell(statement.borrower.fullName)}`,
-    `Lender,${cell(config.INSTITUTION_NAME)}`,
+    `Institution,${cell(statement.institution.name)}`,
     `Status,${cell(statement.status)}`,
     `Principal,${money(statement.terms.principalCents)}`,
     `Rate bps,${statement.terms.rateBps}`,

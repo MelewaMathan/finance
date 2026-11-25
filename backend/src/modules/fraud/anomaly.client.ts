@@ -1,6 +1,6 @@
 import { config } from '../../config/env';
 import { query, queryOne } from '../../db/pool';
-import { alertLender, raiseFlag, type FlagDraft } from './rules.engine';
+import { alertStaff, raiseFlag, type FlagDraft } from './rules.engine';
 
 /**
  * Anomaly detection (fraud layer 2).
@@ -255,7 +255,7 @@ export async function detectAnomaly(
   if (!raised.created) return { result, features, drafts: [] };
 
   if (draft.severity === 'high' || draft.severity === 'critical') {
-    await alertLender(
+    await alertStaff(
       input.loanId,
       'Unusual transaction pattern',
       `${describeAnomaly(result)}. The movement is held until you review it.`,

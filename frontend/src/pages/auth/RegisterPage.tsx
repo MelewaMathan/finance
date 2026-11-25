@@ -55,7 +55,7 @@ export function RegisterPage() {
         setPendingApproval(true);
         return;
       }
-      navigate(isStaffMode ? '/enterprise' : '/borrower', { replace: true });
+      navigate(isStaffMode ? '/staff' : '/borrower', { replace: true });
     } catch (caught) {
       setError(messageOf(caught));
       setErrors(fieldErrors(caught));

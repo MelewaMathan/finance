@@ -15,8 +15,6 @@ export interface ProfileSummary {
   monthlyIncomeCents: number | null;
   completeness?: ProfileCompleteness;
   staffId?: string | null;
-  defaultRateBps?: number;
-  maxPrincipalCents?: number;
 }
 
 export type ProfileCompleteness = {
@@ -62,8 +60,8 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
   if (!user) throw notFound('User not found');
 
   if (user.role === 'staff') {
-    const row = await queryOne<{ staff_id: string | null; default_rate_bps: number; max_principal_cents: number }>(
-      'SELECT staff_id, default_rate_bps, max_principal_cents FROM lender_profiles WHERE user_id = $1',
+    const row = await queryOne<{ staff_id: string | null }>(
+      'SELECT staff_id FROM staff_profiles WHERE user_id = $1',
       [userId],
     );
     return {
@@ -74,8 +72,6 @@ export async function getProfileSummary(userId: string): Promise<ProfileSummary>
       occupation: null,
       monthlyIncomeCents: null,
       staffId: row?.staff_id ?? null,
-      defaultRateBps: row?.default_rate_bps,
-      maxPrincipalCents: row?.max_principal_cents,
     };
   }
 

@@ -2,7 +2,7 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config/env';
 import { encryptField, nationalIdBlindIndex, phoneBlindIndex } from '../lib/crypto';
 import { recordAudit } from '../modules/audit/audit.service';
-import { pool, withTransaction } from './pool';
+import { pool, query, withTransaction } from './pool';
 
 /**
  * Seed data.
@@ -165,7 +165,7 @@ async function upsertDemoPerson(person: DemoPerson, passwordHash: string): Promi
     const userId = inserted.rows[0].id;
 
     if (person.role === 'staff') {
-      await client.query('INSERT INTO lender_profiles (user_id, staff_id) VALUES ($1, $2)', [
+      await client.query('INSERT INTO staff_profiles (user_id, staff_id) VALUES ($1, $2)', [
         userId,
         person.staffId ?? null,
       ]);
@@ -216,6 +216,13 @@ async function upsertDemoPerson(person: DemoPerson, passwordHash: string): Promi
 // Main entry point
 // ---------------------------------------------------------------------------
 export async function seed(): Promise<void> {
+  await query(
+    `UPDATE institution_loan_settings
+        SET institution_name = $1
+      WHERE id = true AND updated_by IS NULL`,
+    [config.INSTITUTION_NAME],
+  );
+
   // Always seed the first admin.
   await seedAdmin();
 

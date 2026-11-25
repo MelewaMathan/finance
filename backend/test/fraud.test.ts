@@ -61,7 +61,7 @@ async function liveLoan(borrowerSession: Session, lenderSession: Session, princi
   const applied = await request(app)
     .post('/api/v1/loans')
     .set(...authHeader(borrowerSession))
-    .send({ lenderId: lenderSession.userId, principalCents, termCount: 4, frequency: 'weekly', purpose: 'Restock' });
+    .send({ principalCents, termCount: 4, frequency: 'weekly', purpose: 'Restock' });
   expect(applied.status).toBe(201);
   const loan = applied.body.loan;
 
@@ -119,7 +119,7 @@ describe('fraud detection and review', () => {
     expect(txn[0].status).toBe('held');
     expect(Number(txn[0].fraud_score)).toBeCloseTo(0.91, 2);
 
-    // The lender is told without having to poll the queue.
+    // Staff are alerted without having to poll the queue.
     const alerts = await query<{ severity: string; title: string }>('SELECT severity, title FROM alerts');
     expect(alerts).toHaveLength(1);
     expect(alerts[0].severity).toBe('high');
@@ -212,7 +212,7 @@ describe('fraud detection and review', () => {
     expect(flag[0].status).toBe('confirmed');
   });
 
-  it('returns a rejected held disbursement to approved so the lender can retry', async () => {
+  it('returns a rejected held disbursement to approved so staff can retry', async () => {
     const borrowerSession = await borrower('grace@fraud.test');
     const lenderSession = await lender();
 
@@ -220,7 +220,7 @@ describe('fraud detection and review', () => {
     const applied = await request(app)
       .post('/api/v1/loans')
       .set(...authHeader(borrowerSession))
-      .send({ lenderId: lenderSession.userId, principalCents: 100_000, termCount: 4, frequency: 'weekly', purpose: 'Restock' });
+      .send({ principalCents: 100_000, termCount: 4, frequency: 'weekly', purpose: 'Restock' });
     const loanId = applied.body.loan.id as string;
 
     await request(app).post(`/api/v1/loans/${loanId}/verify`).set(...authHeader(lenderSession)).send({ note: 'ID checked' });
@@ -255,7 +255,7 @@ describe('fraud detection and review', () => {
     expect(retried.body.loan.status).toBe('disbursed');
   });
 
-  it('scopes the queue to the lender, shows everything to an admin and nothing to a borrower', async () => {
+  it('shows all institution flags to staff and admins, and none to borrowers', async () => {
     const borrowerSession = await borrower('grace@fraud.test');
     const lenderSession = await lender();
     const loan = await liveLoan(borrowerSession, lenderSession);
@@ -266,21 +266,21 @@ describe('fraud detection and review', () => {
       .set(...authHeader(borrowerSession))
       .send({ amountCents: 25_000, method: 'cash' });
 
-    const own = await request(app).get('/api/v1/fraud/flags').set(...authHeader(lenderSession));
-    expect(own.status).toBe(200);
-    expect(own.body.count).toBe(1);
-    expect(own.body.flags[0].borrowerName).toBe('Grace Wanjiku');
+    const flags = await request(app).get('/api/v1/fraud/flags').set(...authHeader(lenderSession));
+    expect(flags.status).toBe(200);
+    expect(flags.body.count).toBe(1);
+    expect(flags.body.flags[0].borrowerName).toBe('Grace Wanjiku');
 
     const other = await lender('other@fraud.test');
     const others = await request(app).get('/api/v1/fraud/flags').set(...authHeader(other));
     expect(others.status).toBe(200);
-    expect(others.body.count).toBe(0);
+    expect(others.body.count).toBe(1);
 
     const outsiderResolve = await request(app)
-      .post(`/api/v1/fraud/flags/${own.body.flags[0].id}/resolve`)
+      .post(`/api/v1/fraud/flags/${flags.body.flags[0].id}/resolve`)
       .set(...authHeader(other))
       .send({ resolution: 'cleared', note: 'Not mine to judge.' });
-    expect(outsiderResolve.status).toBe(404);
+    expect(outsiderResolve.status).toBe(200);
 
     const admin = await createAdmin('admin@fraud.test');
     const asAdmin = await request(app).get('/api/v1/fraud/flags').set(...authHeader(admin));
@@ -289,7 +289,7 @@ describe('fraud detection and review', () => {
 
     // An admin reviews the reviewer; they must not be able to clear findings.
     const adminResolve = await request(app)
-      .post(`/api/v1/fraud/flags/${own.body.flags[0].id}/resolve`)
+      .post(`/api/v1/fraud/flags/${flags.body.flags[0].id}/resolve`)
       .set(...authHeader(admin))
       .send({ resolution: 'cleared', note: 'Admins do not decide.' });
     expect(adminResolve.status).toBe(403);
@@ -364,7 +364,7 @@ describe('fraud detection and review', () => {
     expect(flags).toHaveLength(0);
   });
 
-  it('lets a lender read and clear their alerts', async () => {
+  it('lets staff read and clear their own alerts', async () => {
     const borrowerSession = await borrower('grace@fraud.test');
     const lenderSession = await lender();
     const loan = await liveLoan(borrowerSession, lenderSession);
@@ -389,7 +389,7 @@ describe('fraud detection and review', () => {
     const after = await request(app).get('/api/v1/alerts').set(...authHeader(lenderSession));
     expect(after.body.unread).toBe(0);
 
-    // Alerts are per-user: another lender cannot even see the id.
+    // Alerts are per-user: another staff account cannot even see the id.
     const other = await lender('other@alerts.test');
     const stolen = await request(app)
       .post(`/api/v1/alerts/${inbox.body.alerts[0].id}/read`)

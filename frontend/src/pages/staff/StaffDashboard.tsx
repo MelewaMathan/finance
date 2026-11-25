@@ -2,12 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Card, PageHeader, StatCard } from '../../components/ui';
 import { useAuth } from '../../lib/auth';
-import { formatMoney, percentFromBps } from '../../lib/format';
+import { formatMoney } from '../../lib/format';
 import { listLoans } from '../../lib/loans';
 
-/** Staff dashboard: own-book metrics and the controls they operate. */
-export function LenderDashboard() {
-  const { user, profile } = useAuth();
+/** Institution-wide staff dashboard. */
+export function StaffDashboard() {
+  const { user } = useAuth();
   const [counts, setCounts] = useState<{ pending: number; held: number; active: number; outstanding: number } | null>(null);
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function LenderDashboard() {
         title={`Karibu, ${user.fullName.split(' ')[0]}`}
         subtitle="Review applications, verify identity, and keep every transaction provable."
         actions={
-          <Link to="/enterprise/applications" className="btn-primary">
+          <Link to="/staff/applications" className="btn-primary">
             Review applications
           </Link>
         }
@@ -49,11 +49,11 @@ export function LenderDashboard() {
         <StatCard
           label="Awaiting decision"
           value={counts ? counts.pending : '—'}
-          hint={counts && counts.held > 0 ? `${counts.held} held for fraud review` : 'Applications in your queue'}
+          hint={counts && counts.held > 0 ? `${counts.held} held for fraud review` : 'Institution applications'}
           tone={counts && counts.held > 0 ? 'warning' : 'default'}
         />
         <StatCard label="Active loans" value={counts ? counts.active : '—'} hint={`Outstanding ${formatMoney(counts?.outstanding ?? 0)}`} tone="brand" />
-        <StatCard label="Default rate / period" value={percentFromBps(profile?.defaultRateBps ?? 0)} hint={`Up to ${formatMoney(profile?.maxPrincipalCents ?? null)} per loan`} />
+        <StatCard label="Loan terms" value="Institution-wide" hint="Managed by administrators" />
       </div>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
@@ -70,17 +70,17 @@ export function LenderDashboard() {
           <div className="space-y-4">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-slate-900">Interest rate</p>
-                <p className="text-xs text-slate-500">Set per loan when you approve it.</p>
+                <p className="text-sm font-medium text-slate-900">Institution loan terms</p>
+                <p className="text-xs text-slate-500">Applications use the current rate and limits set by an administrator.</p>
               </div>
-              <Badge tone="info">{percentFromBps(profile?.defaultRateBps ?? 0)} default</Badge>
+              <Badge tone="info">Shared</Badge>
             </div>
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-medium text-slate-900">Fraud review</p>
                 <p className="text-xs text-slate-500">High and critical flags block clearing automatically.</p>
               </div>
-              <Link to="/enterprise/fraud" className="text-sm font-semibold text-brand-700 hover:underline">
+              <Link to="/staff/fraud" className="text-sm font-semibold text-brand-700 hover:underline">
                 Open queue →
               </Link>
             </div>

@@ -24,7 +24,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -43,7 +43,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic  # SecureMicrofinance
 
 A blockchain-backed microfinance prototype for **borrowers and staff loan officers**,
@@ -70,7 +70,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -89,7 +89,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic admin** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |
@@ -150,7 +150,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -163,9 +163,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -402,7 +402,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -412,7 +412,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.
@@ -469,7 +469,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -488,7 +488,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic admin** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |
@@ -549,7 +549,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -562,9 +562,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -801,7 +801,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -811,7 +811,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.
@@ -882,7 +882,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -895,9 +895,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -1041,7 +1041,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -1060,7 +1060,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic admin** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |
@@ -1121,7 +1121,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -1134,9 +1134,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -1373,7 +1373,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -1383,7 +1383,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.
@@ -1478,7 +1478,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -1497,7 +1497,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic admin** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |
@@ -1558,7 +1558,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -1571,9 +1571,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -1810,7 +1810,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -1820,7 +1820,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.
@@ -1921,7 +1921,7 @@ A staff member keeps a paper or spreadsheet ledger. Both sides of a dispute ther
 staff's own record: the borrower cannot prove a payment was made, and nobody can prove the record was not
 edited afterwards. A licensed institution has auditors; a small office with twenty customers does not.
 
-This prototype gives a small lender the same three properties a bank's core system has, at prototype scale:
+This institution-wide service provides the same three core properties at prototype scale:
 
 | Property | Mechanism |
 | --- | --- |
@@ -1940,7 +1940,7 @@ fake record true. See [Known limitations](#10-known-limitations).
 | Role | Sees | Cannot |
 | --- | --- | --- |
 | **Borrower** | Own applications, schedule, statement, score, flags on own loan, proof of own payments | See other borrowers, resolve flags, read the audit log |
-| **Staff** | Their book: applications, decisions, disbursements, repayments, fraud queue, alerts | Read another staff member's book, read the audit log, resolve their own findings as an auditor |
+| **Staff** | All institution applications, decisions, disbursements, repayments, fraud queue, alerts | Read the audit log or administer loan settings |
 | **Forensic admin** | Everything, read-only: audit log, timeline, integrity runs, all loans and flags | Write anything except the record of their own integrity run and export |
 
 | Module | What it does | Where |
@@ -2001,7 +2001,7 @@ Three boundaries are load-bearing:
 ```mermaid
 sequenceDiagram
   autonumber
-  participant L as Lender
+  participant S as Staff
   participant API as Node API
   participant DB as PostgreSQL
   participant ML as ML service
@@ -2014,9 +2014,9 @@ sequenceDiagram
   ML-->>API: is_anomaly, risk, severity, unusual features
 
   alt rules or high/critical anomaly
-    API->>DB: transaction = held (+ hold_reason), flag, alert to lender
-    API-->>L: 200 { held: true } — no money moved
-    Note over L,DB: Lender reviews; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
+    API->>DB: transaction = held (+ hold_reason), flag, alert to staff
+    API-->>S: 200 { held: true } — no money moved
+    Note over S,DB: Staff review; release applies the movement<br/>with the same allocation code, reject keeps it as evidence
   else clear
     API->>DB: allocate installments under row locks, transaction = cleared
     API->>CH: record(loanRefHash, type, occurredAt, payloadHash)
@@ -2253,7 +2253,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -2263,7 +2263,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.
@@ -2301,7 +2301,7 @@ With the API running:
 
 The spec covers all modules and documents the HTTP semantics that matter: `201` vs `202` on repayments
 (applied vs held), `200` with `result: tampered` for an integrity finding, `404` instead of `403` for a
-resource in someone else's book, and the `X-Document-SHA256` header on every document download.
+resource in someone else's account, and the `X-Document-SHA256` header on every document download.
 
 ---
 
@@ -2311,7 +2311,7 @@ Stated plainly, because a security project that oversells itself is worse than a
 
 * **The recorder wallet is a server secret.** A compromised API host can append bogus hashes. It cannot
   rewrite existing ones, which is the property being demonstrated — but "append-only" is not "truthful".
-* **The chain proves the record, not the cash.** If a lender claims a disbursement that never happened,
+* **The chain proves the record, not the cash.** If staff claim a disbursement that never happened,
   the ledger faithfully records the claim.
 * **No payment-rail integration.** M-Pesa codes are validated for shape and uniqueness, not verified with
   Safaricom; there is no money movement, only accounting.

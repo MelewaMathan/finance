@@ -221,7 +221,7 @@ paths:
         contain 7 to 9 digits. Kenyan mobile numbers are stored in
         +2547XXXXXXXX or +2541XXXXXXXX form. Empty kraPin, nationalId, phone,
         or occupation values clear those fields; setting monthlyIncomeCents
-        to zero clears income. Auditors are read-only; lenders have no
+        to zero clears income. Admins are read-only on loan operations; staff have no
         borrower profile.
       security: [{ bearerAuth: [] }]
       requestBody:
@@ -256,45 +256,73 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '403':
-          description: Auditors are read-only, lenders have no borrower profile
+          description: Admins are read-only on loan operations; staff have no borrower profile
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
-  /v1/lenders:
+  /v1/loan-settings:
     get:
       tags: [loans]
-      summary: Lenders a borrower may apply to
-      description: Active lender accounts with their business name and default terms.
+      summary: Read public institution loan terms
+      description: Available to authenticated borrowers and staff; contains no editable controls or private data.
       security: [{ bearerAuth: [] }]
       responses:
         '200':
-          description: Lender options
+          description: Interest rate, limits, allowed frequencies, and institution name.
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  items:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id: { type: string, format: uuid }
-                        fullName: { type: string }
-                        institutionName: { type: string, nullable: true }
-                        defaultRateBps: { type: integer, nullable: true }
-                        maxPrincipalCents: { type: integer, nullable: true }
+                  settings: { $ref: '#/components/schemas/InstitutionLoanSettings' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /v1/admin/loan-settings:
+    get:
+      tags: [admin]
+      summary: Read institution loan settings (admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Current institution loan settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/InstitutionLoanSettings' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [admin]
+      summary: Update institution loan settings (admin only)
+      description: Every changed setting is written to the audit log with its previous and new value.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InstitutionLoanSettings' }
+      responses:
+        '200':
+          description: Updated institution loan settings.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  settings: { $ref: '#/components/schemas/InstitutionLoanSettings' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /v1/loans:
     post:
       tags: [loans]
       summary: Apply for a loan (borrower only)
       description: >
-        Creates the application, generates the repayment schedule from the
-        lender's default rate and runs the rapid-application rule. The loan
-        starts in `pending`; nothing moves until the lender verifies identity,
+        Creates the application using institution-wide rates and limits and
+        runs the rapid-application rule. The loan starts in `pending`; nothing
+        moves until staff verify identity,
         approves, and disburses. The borrower profile must have a national ID,
         Kenyan mobile phone, occupation, and positive monthly income before
         this endpoint validates the application or runs credit scoring.
@@ -305,9 +333,8 @@ paths:
           application/json:
             schema:
               type: object
-              required: [lenderId, principalCents, termCount, frequency, purpose]
+              required: [principalCents, termCount, frequency, purpose]
               properties:
-                lenderId: { type: string, format: uuid }
                 principalCents: { type: integer, minimum: 1, example: 500000 }
                 termCount: { type: integer, minimum: 1, maximum: 365, example: 4 }
                 frequency: { type: string, enum: [daily, weekly, monthly] }
@@ -338,7 +365,7 @@ paths:
     get:
       tags: [loans]
       summary: List loans visible to the caller
-      description: A borrower sees their own applications; a lender sees their book; an admin sees everything.
+      description: Borrowers see only their own applications; institution staff and admins can read all applications.
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -390,7 +417,7 @@ paths:
   /v1/loans/{id}/verify:
     post:
       tags: [loans]
-      summary: Record that the lender checked the borrower's identity (lender only)
+      summary: Record that staff checked the borrower's identity (staff only)
       description: Moves the loan to `under_review` and is audited with the note.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/LoanId' }]
@@ -418,7 +445,7 @@ paths:
   /v1/loans/{id}/decision:
     post:
       tags: [loans]
-      summary: Approve or reject an application (lender only)
+      summary: Approve or reject an application (staff only)
       description: >
         Approval regenerates the schedule at the agreed rate, renders the PDF
         agreement and stores its SHA-256 on the loan. Rejection is terminal.
@@ -452,11 +479,11 @@ paths:
   /v1/loans/{id}/disburse:
     post:
       tags: [loans]
-      summary: Release the money (lender only)
+      summary: Release the money (staff only)
       description: >
         Runs both fraud layers before any money moves. `held: true` means the
         disbursement exists but is parked for review; the loan stays `approved`
-        so the lender can retry or reject through the hold decision endpoint.
+        so staff can retry or reject through the hold decision endpoint.
         A cleared disbursement is anchored on-chain and audited.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/LoanId' }]
@@ -510,7 +537,7 @@ paths:
   /v1/loans/{id}/repayments:
     post:
       tags: [repayments]
-      summary: Record a repayment (borrower or lender)
+      summary: Record a repayment (borrower or staff)
       description: >
         Allocates the amount across installments (penalty, then interest, then
         principal) inside one transaction with row locks, so two concurrent
@@ -610,7 +637,7 @@ paths:
     get:
       tags: [scoring]
       summary: Latest advisory credit score for a loan
-      description: Visible to the borrower, the lender and auditors; null before the first run.
+      description: Visible to the borrower, institution staff and admins; null before the first run.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/LoanId' }]
       responses:
@@ -631,7 +658,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
     post:
       tags: [scoring]
-      summary: Re-run the credit score (lender only)
+      summary: Re-run the credit score (staff only)
       description: >
         Calls the Python service; when it is unreachable the deterministic JS
         heuristic is used and the stored source says so. The score is advisory:
@@ -675,7 +702,7 @@ paths:
   /v1/loans/{id}/anchor:
     post:
       tags: [ledger]
-      summary: Anchor any payments the ledger missed (lender only)
+      summary: Anchor any payments the ledger missed (staff only)
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/LoanId' }]
       responses:
@@ -693,7 +720,7 @@ paths:
     get:
       tags: [fraud]
       summary: Fraud flags raised on a loan
-      description: Visible to the borrower (their own loan), the lender and auditors.
+      description: Visible to the borrower (their own loan), institution staff and admins.
       security: [{ bearerAuth: [] }]
       parameters: [{ $ref: '#/components/parameters/LoanId' }]
       responses:
@@ -713,7 +740,7 @@ paths:
   /v1/loans/{id}/holds/resolve:
     post:
       tags: [fraud]
-      summary: Release or reject a held movement (lender only)
+      summary: Release or reject a held movement (staff only)
       description: >
         Separate from clearing a flag on purpose: releasing moves money (the
         repayment is applied with the same allocation code as an unheld one,
@@ -763,7 +790,7 @@ paths:
   /v1/ledger/audit-anchor:
     post:
       tags: [ledger]
-      summary: Anchor the current audit-chain root on-chain (lender only)
+      summary: Anchor the current audit-chain root on-chain (staff only)
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -779,7 +806,7 @@ paths:
   /v1/fraud/summary:
     get:
       tags: [fraud]
-      summary: Open flags, held money and alerts at a glance (lender, admin)
+      summary: Open flags, held money and alerts at a glance (staff, admin)
       security: [{ bearerAuth: [] }]
       responses:
         '200':
@@ -795,7 +822,7 @@ paths:
   /v1/fraud/flags:
     get:
       tags: [fraud]
-      summary: Review queue (lender, admin)
+      summary: Review queue (staff, admin)
       security: [{ bearerAuth: [] }]
       parameters:
         - in: query
@@ -827,7 +854,7 @@ paths:
   /v1/fraud/flags/{id}/resolve:
     post:
       tags: [fraud]
-      summary: Clear or confirm a flag (lender only)
+      summary: Clear or confirm a flag (staff only)
       description: A note is mandatory. Clearing a flag never moves money.
       security: [{ bearerAuth: [] }]
       parameters:
@@ -1129,6 +1156,20 @@ components:
       schema: { type: string, format: uuid }
 
   schemas:
+    InstitutionLoanSettings:
+      type: object
+      required: [interestRateBps, minPrincipalCents, maxPrincipalCents, maxInstallments, allowedFrequencies, institutionName]
+      properties:
+        interestRateBps: { type: integer, minimum: 0, maximum: 10000 }
+        minPrincipalCents: { type: integer, minimum: 1, maximum: 1000000000 }
+        maxPrincipalCents: { type: integer, minimum: 1, maximum: 1000000000 }
+        maxInstallments: { type: integer, minimum: 1, maximum: 365 }
+        allowedFrequencies:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [daily, weekly, monthly] }
+        institutionName: { type: string, minLength: 2, maxLength: 120 }
     PublicUser:
       type: object
       properties:
@@ -1164,8 +1205,6 @@ components:
               type: array
               items: { type: string, enum: [nationalId, phone, occupation, monthlyIncomeCents, kraPin] }
         staffId: { type: string, nullable: true }
-        defaultRateBps: { type: integer, nullable: true }
-        maxPrincipalCents: { type: integer, nullable: true }
     ProfileIncomplete:
       type: object
       required: [code, message, missing]
@@ -1182,8 +1221,13 @@ components:
       properties:
         id: { type: string, format: uuid }
         ref: { type: string, example: SMF-2026-000123 }
-        lenderId: { type: string, format: uuid }
         borrowerId: { type: string, format: uuid }
+        institution:
+          type: object
+          properties:
+            id: { type: string, format: uuid, nullable: true }
+            fullName: { type: string }
+            institutionName: { type: string }
         principalCents: { type: integer }
         termCount: { type: integer }
         frequency: { type: string, enum: [daily, weekly, monthly] }

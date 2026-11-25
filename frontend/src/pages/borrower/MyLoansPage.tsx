@@ -42,7 +42,7 @@ export function MyLoansPage() {
       {loans && loans.length === 0 ? (
         <EmptyState
           title="No applications yet"
-          description="Apply for your first loan; the operating enterprise will verify your identity before approving."
+          description="Apply for your first loan; our staff will verify your identity before approving."
           action={
             <Link to="/borrower/apply" className="btn-brand">
               Apply for a loan
@@ -68,7 +68,7 @@ export function MyLoansPage() {
                   </div>
                   <p className="mt-1 truncate text-sm text-slate-600">{loan.purpose}</p>
                   <p className="mt-1 text-xs text-slate-500">
-                    {loan.lender.institutionName ?? loan.lender.fullName} · applied {formatDate(loan.createdAt)} ·{' '}
+                    {loan.institution.institutionName ?? loan.institution.fullName} · applied {formatDate(loan.createdAt)} ·{' '}
                     {percentFromBps(loan.rateBps)} × {loan.termCount} {loan.frequency}
                   </p>
                 </div>

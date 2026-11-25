@@ -22,7 +22,8 @@ const TABLES = [
   'credit_scores',
   'transactions',
   'borrower_profiles',
-  'lender_profiles',
+  'staff_profiles',
+  'institution_loan_settings',
   'users',
 ];
 
@@ -33,6 +34,12 @@ beforeEach(async () => {
   } finally {
     await query('ALTER TABLE audit_log ENABLE TRIGGER USER');
   }
+  await query(
+    `INSERT INTO institution_loan_settings
+       (id, interest_rate_bps, min_principal_cents, max_principal_cents,
+        max_installments, allowed_frequencies, institution_name)
+     VALUES (true, 1000, 10000, 20000000, 365, ARRAY['daily', 'weekly', 'monthly'], 'SecureMicrofinance')`,
+  );
   await query("ALTER SEQUENCE audit_seq RESTART WITH 1");
 });
 

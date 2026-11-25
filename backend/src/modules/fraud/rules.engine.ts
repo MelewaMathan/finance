@@ -80,14 +80,14 @@ export async function raiseFlag(draft: FlagDraft): Promise<{ id: string; created
   return { id: existing?.id ?? '', created: false };
 }
 
-/** Sends an in-app alert to the lender that owns the book. */
-export async function alertLender(loanId: string, title: string, body: string, severity: Severity): Promise<void> {
-  const loan = await queryOne<{ lender_id: string }>('SELECT lender_id FROM loans WHERE id = $1', [loanId]);
-  if (!loan) return;
+/** Sends an in-app alert to institution staff. */
+export async function alertStaff(loanId: string, title: string, body: string, severity: Severity): Promise<void> {
   await query(
     `INSERT INTO alerts (user_id, type, severity, title, body, entity_type, entity_id)
-     VALUES ($1, $2, $3, $4, $5, 'loan', $6)`,
-    [loan.lender_id, 'fraud_flag', severity, title, body, loanId],
+     SELECT id, $1, $2, $3, $4, 'loan', $5
+       FROM users
+      WHERE role = 'staff' AND status = 'active'`,
+    ['fraud_flag', severity, title, body, loanId],
   );
 }
 
@@ -201,7 +201,7 @@ export async function detectReferenceIssues(input: {
     const result = await raiseFlag(draft);
     if (result.created) drafts.push(draft);
     if (result.created && crossLoan) {
-      await alertLender(
+      await alertStaff(
         input.loanId,
         'Duplicate mobile-money reference',
         `Receipt ${input.codeNorm} has already been used on another loan. Disbursement/repayment is held for review.`,

@@ -4,22 +4,20 @@ import { Alert, Card, Field, PageHeader, Select, Spinner, TextInput } from '../.
 import { ApiError } from '../../lib/api';
 import { PROFILE_COMPLETENESS_LABELS, useAuth } from '../../lib/auth';
 import { formatMoney, percentFromBps } from '../../lib/format';
-import { applyLoan, listLenders, type Frequency, type LenderOption } from '../../lib/loans';
+import { applyLoan, getLoanSettings, type Frequency, type InstitutionLoanSettings } from '../../lib/loans';
 
 /**
  * Loan application form.
  *
- * The borrower chooses the operating enterprise, the amount, the term and the
- * structure. The rate shown here is the enterprise's default and is only an
- * estimate: the server recalculates it at approval.
+ * The borrower chooses the amount, term and structure; institution terms are
+ * read-only and loaded from the settings endpoint.
  */
 export function ApplyLoanPage() {
   const navigate = useNavigate();
   const { profile } = useAuth();
-  const [lenders, setLenders] = useState<LenderOption[] | null>(null);
+  const [settings, setSettings] = useState<InstitutionLoanSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [lenderId, setLenderId] = useState('');
   const [principal, setPrincipal] = useState('5000');
   const [termCount, setTermCount] = useState('8');
   const [frequency, setFrequency] = useState<Frequency>('weekly');
@@ -34,21 +32,22 @@ export function ApplyLoanPage() {
 
   useEffect(() => {
     let cancelled = false;
-    listLenders()
-      .then((items) => {
+    getLoanSettings()
+      .then((current) => {
         if (cancelled) return;
-        setLenders(items);
-        setLenderId((current) => current || items[0]?.id || '');
+        setSettings(current);
+        setFrequency((previous) =>
+          current.allowedFrequencies.includes(previous) ? previous : current.allowedFrequencies[0] ?? previous,
+        );
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Could not load enterprise partners');
+        if (!cancelled) setLoadError(cause instanceof Error ? cause.message : 'Could not load loan settings');
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const selected = lenders?.find((option) => option.id === lenderId);
   const missingProfileFields = profile?.completeness?.missing.map(
     (field) => PROFILE_COMPLETENESS_LABELS[field],
   ) ?? [];
@@ -56,29 +55,25 @@ export function ApplyLoanPage() {
   const estimate = useMemo(() => {
     const principalCents = Math.round(Number(principal || '0') * 100);
     const periods = Number(termCount || '0');
-    if (!selected || !Number.isFinite(principalCents) || principalCents <= 0 || periods <= 0) return null;
-    const interest = Math.round((principalCents * selected.defaultRateBps * periods) / 10_000);
+    if (!settings || !Number.isFinite(principalCents) || principalCents <= 0 || periods <= 0) return null;
+    const interest = Math.round((principalCents * settings.interestRateBps * periods) / 10_000);
     return { principalCents, interestCents: interest, totalCents: principalCents + interest };
-  }, [principal, termCount, selected]);
+  }, [principal, termCount, settings]);
 
   async function onSubmit(event: React.FormEvent) {
     event.preventDefault();
     setError(null);
 
     const principalCents = Math.round(Number(principal) * 100);
-    if (!lenderId) {
-      setError('Choose an enterprise');
-      return;
-    }
-    if (!Number.isFinite(principalCents) || principalCents < 10_000) {
-      setError('Enter an amount of at least KES 100');
+    if (!settings || !Number.isFinite(principalCents) || principalCents < settings.minPrincipalCents ||
+        principalCents > settings.maxPrincipalCents) {
+      setError('Enter an amount within the institution loan limits');
       return;
     }
 
     setSubmitting(true);
     try {
       const loan = await applyLoan({
-        lenderId,
         principalCents,
         termCount: Number(termCount),
         frequency,
@@ -99,7 +94,7 @@ export function ApplyLoanPage() {
     <div>
       <PageHeader
         title="Apply for a loan"
-        subtitle="Your application goes to the staff member you choose. Identity data stays encrypted."
+        subtitle="Our staff review every application. Identity data stays encrypted."
       />
 
       {profile?.completeness && !profile.completeness.complete ? (
@@ -116,33 +111,25 @@ export function ApplyLoanPage() {
 
       {loadError ? (
         <Alert>{loadError}</Alert>
-      ) : !lenders ? (
-        <Spinner label="Loading enterprise partners" />
-      ) : lenders.length === 0 ? (
-        <Alert tone="warning">No enterprise is accepting applications yet. Ask the operating enterprise to register first.</Alert>
+      ) : !settings ? (
+        <Spinner label="Loading loan settings" />
       ) : (
         <div className="grid gap-5 lg:grid-cols-3">
           <form className="lg:col-span-2" onSubmit={onSubmit} noValidate>
             <Card title="Loan request">
               <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <Field label="Operating enterprise" htmlFor="lender">
-                    <Select id="lender" value={lenderId} onChange={(event) => setLenderId(event.target.value)} required>
-                      {lenders.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {option.institutionName ?? option.fullName} — up to {formatMoney(option.maxPrincipalCents)} at{' '}
-                          {percentFromBps(option.defaultRateBps)} per period
-                        </option>
-                      ))}
-                    </Select>
-                  </Field>
+                <div className="sm:col-span-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-700" aria-live="polite">
+                  Interest {percentFromBps(settings.interestRateBps)} per period. Loans from Ksh{' '}
+                  {(settings.minPrincipalCents / 100).toLocaleString('en-KE')} to Ksh{' '}
+                  {(settings.maxPrincipalCents / 100).toLocaleString('en-KE')}.
                 </div>
 
-                <Field label="Amount (KES)" htmlFor="principal" hint="Whole shillings, minimum 100">
+                <Field label="Amount (KES)" htmlFor="principal" hint={`From Ksh ${(settings.minPrincipalCents / 100).toLocaleString('en-KE')} to Ksh ${(settings.maxPrincipalCents / 100).toLocaleString('en-KE')}`}>
                   <TextInput
                     id="principal"
                     type="number"
-                    min={100}
+                    min={settings.minPrincipalCents / 100}
+                    max={settings.maxPrincipalCents / 100}
                     step={50}
                     value={principal}
                     onChange={(event) => setPrincipal(event.target.value)}
@@ -150,12 +137,12 @@ export function ApplyLoanPage() {
                   />
                 </Field>
 
-                <Field label="Number of installments" htmlFor="term" hint="1 to 365 periods">
+                <Field label="Number of installments" htmlFor="term" hint={`1 to ${settings.maxInstallments} periods`}>
                   <TextInput
                     id="term"
                     type="number"
                     min={1}
-                    max={365}
+                    max={settings.maxInstallments}
                     value={termCount}
                     onChange={(event) => setTermCount(event.target.value)}
                     required
@@ -164,9 +151,11 @@ export function ApplyLoanPage() {
 
                 <Field label="Repayment frequency" htmlFor="frequency">
                   <Select id="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value as Frequency)}>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="monthly">Monthly</option>
+                    {settings.allowedFrequencies.map((allowed) => (
+                      <option key={allowed} value={allowed}>
+                        {allowed[0].toUpperCase() + allowed.slice(1)}
+                      </option>
+                    ))}
                   </Select>
                 </Field>
 
@@ -182,7 +171,7 @@ export function ApplyLoanPage() {
                 </Field>
 
                 <div className="sm:col-span-2">
-                  <Field label="Purpose" htmlFor="purpose" hint="At least 5 characters, visible to the enterprise">
+                  <Field label="Purpose" htmlFor="purpose" hint="At least 5 characters, visible to institution staff">
                     <TextInput
                       id="purpose"
                       value={purpose}
@@ -228,7 +217,7 @@ export function ApplyLoanPage() {
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-slate-500">
                   Guarantor details are encrypted at rest. Your national ID and phone are already on file and shown
-                  masked to the operating enterprise.
+                  masked to our staff.
                 </p>
                 <button type="submit" className="btn-brand" disabled={submitting}>
                   {submitting ? 'Submitting…' : 'Submit application'}
@@ -247,7 +236,7 @@ export function ApplyLoanPage() {
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-slate-500">
-                      Interest ({percentFromBps(selected?.defaultRateBps ?? 0)} × {termCount})
+                      Interest ({percentFromBps(settings.interestRateBps)} × {termCount})
                     </dt>
                     <dd className="font-medium">{formatMoney(estimate.interestCents)}</dd>
                   </div>
@@ -264,14 +253,14 @@ export function ApplyLoanPage() {
                 <p className="text-sm text-slate-500">Enter an amount and term to see the estimate.</p>
               )}
               <p className="mt-4 text-xs text-slate-400">
-                Flat interest per period, as quoted by the enterprise. The enterprise confirms the final rate when approving.
+                Our staff confirm the final terms when approving.
               </p>
             </Card>
 
             <Card title="What happens next">
               <ol className="space-y-3 text-sm text-slate-600">
-                <li>1. The enterprise verifies your identity against the ID on file.</li>
-                <li>2. It approves with a final rate, and an agreement PDF is sealed with a SHA-256 fingerprint.</li>
+                <li>1. Our staff verify your identity against the ID on file.</li>
+                <li>2. Our staff confirm the final terms and issue an agreement PDF sealed with a SHA-256 fingerprint.</li>
                 <li>3. Disbursement and every repayment are hashed and anchored on the ledger.</li>
               </ol>
             </Card>

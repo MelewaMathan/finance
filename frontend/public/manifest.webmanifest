@@ -1,7 +1,7 @@
 {
   "name": "SecureMicrofinance",
   "short_name": "SMF",
-  "description": "Blockchain-verified microfinance for private lenders and their borrowers",
+  "description": "Blockchain-verified microfinance for borrowers and institution staff",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

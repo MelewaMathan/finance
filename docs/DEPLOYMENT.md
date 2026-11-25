@@ -12,7 +12,7 @@ password).
 
 ```mermaid
 flowchart LR
-    U["Browser<br/>(borrower · lender · auditor)"] -->|"HTTPS 443"| N["nginx<br/>static SPA + /api proxy"]
+    U["Browser<br/>(borrower · staff · admin)"] -->|"HTTPS 443"| N["nginx<br/>static SPA + /api proxy"]
     N -->|"127.0.0.1:4000"| A["API<br/>node backend/dist/server.js"]
     A -->|"TCP 5432, TLS"| R[("RDS PostgreSQL 16")]
     A -->|"127.0.0.1:8000"| M["ML service<br/>uvicorn, FastAPI"]
@@ -404,10 +404,10 @@ curl -sf -X POST https://finance.example.com/api/v1/integrity/check \
 Every run is itself written to the audit chain (`integrity.check_run`), and an all-scope run also covers
 the loan ledgers. A `result` of `tampered` in that JSONL file is the alarm the whole design exists for.
 
-Anchoring the chain head on-chain is a lender-authenticated call, not a background job in this prototype:
+Anchoring the chain head on-chain is an institution staff-authenticated call, not a background job in this prototype:
 
 ```bash
-curl -X POST https://finance.example.com/api/v1/ledger/audit-anchor -H "authorization: Bearer $LENDER_TOKEN"
+curl -X POST https://finance.example.com/api/v1/ledger/audit-anchor -H "authorization: Bearer $STAFF_TOKEN"
 ```
 
 Do it after each business day you care about. Without anchors, tampering is still *detectable* from the

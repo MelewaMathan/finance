@@ -46,8 +46,6 @@ export interface ProfileSummary {
     missing: ProfileCompletenessField[];
   };
   staffId?: string | null;
-  defaultRateBps?: number;
-  maxPrincipalCents?: number;
 }
 
 interface AuthContextValue {
@@ -203,7 +201,7 @@ export function useAuth(): AuthContextValue {
 export function homeFor(role: SessionUser['role']): string {
   switch (role) {
     case 'staff':
-      return '/enterprise';
+      return '/staff';
     case 'admin':
       return '/admin';
     default:

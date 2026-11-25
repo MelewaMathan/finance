@@ -115,13 +115,12 @@ const FLAG_SELECT = `
 
 function assertQueueReader(actor: Actor): void {
   if (actor.role !== 'staff' && actor.role !== 'admin') {
-    throw forbidden('Only the enterprise and admins may review fraud flags');
+    throw forbidden('Only institution staff and admins may review fraud flags');
   }
 }
 
 /**
- * The review queue. A lender sees their own book; an auditor sees everything,
- * which is the point of the role, but can change nothing.
+ * The institution-wide review queue; admins remain read-only.
  */
 export async function listFlags(actor: Actor, filters: FlagQuery): Promise<FraudFlag[]> {
   assertQueueReader(actor);
@@ -131,22 +130,15 @@ export async function listFlags(actor: Actor, filters: FlagQuery): Promise<Fraud
       WHERE ($1::text = 'all' OR f.status::text = $1)
         AND ($2::text IS NULL OR f.severity::text = $2)
         AND ($3::uuid IS NULL OR f.loan_id = $3)
-        AND ($4::uuid IS NULL
-             OR l.lender_id = $4
-             -- An identity conflict raised at registration has no loan yet, so
-             -- ownership runs through the borrower's book instead.
-             OR EXISTS (SELECT 1 FROM loans own
-                         WHERE own.borrower_id = f.borrower_id AND own.lender_id = $4))
       ORDER BY CASE f.severity
                  WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3
                END,
                f.detected_at DESC
-      LIMIT $5`,
+      LIMIT $4`,
     [
       filters.status,
       filters.severity ?? null,
       filters.loanId ?? null,
-      actor.role === 'staff' ? actor.id : null,
       filters.limit,
     ],
   );
@@ -175,35 +167,21 @@ export async function listLoanFlags(actor: Actor, loanId: string): Promise<Fraud
 }
 
 /** Reads one flag with enough context to decide who may act on it. */
-async function loadFlagForReview(flagId: string): Promise<(FlagRow & { lender_id: string | null }) | null> {
-  const row = await queryOne<FlagRow & { lender_id: string | null }>(
-    `WITH base AS (${FLAG_SELECT} WHERE f.id = $1)
-     SELECT base.*, (SELECT l2.lender_id FROM loans l2 WHERE l2.id = base.loan_id) AS lender_id
-       FROM base`,
+async function loadFlagForReview(flagId: string): Promise<FlagRow | null> {
+  const row = await queryOne<FlagRow>(
+    `${FLAG_SELECT} WHERE f.id = $1`,
     [flagId],
   );
   return row ?? null;
 }
 
-/** A lender may act only on flags arising from their own book. */
-async function lenderOwnsFlag(actor: Actor, row: FlagRow & { lender_id: string | null }): Promise<boolean> {
-  if (row.lender_id === actor.id) return true;
-  if (!row.borrower_id) return false;
-  const shared = await queryOne<{ ok: boolean }>(
-    'SELECT true AS ok FROM loans WHERE borrower_id = $1 AND lender_id = $2 LIMIT 1',
-    [row.borrower_id, actor.id],
-  );
-  return Boolean(shared);
-}
-
 /** Reviewer decision on a single flag. Does not move money. */
 export async function resolveFlag(actor: Actor, flagId: string, input: ResolveFlagInput, req: Request): Promise<FraudFlag> {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can resolve a flag');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can resolve a flag');
 
   const row = await loadFlagForReview(flagId);
   // Unknown flag and someone else's flag look identical on purpose.
   if (!row) throw notFound('Flag not found');
-  if (!(await lenderOwnsFlag(actor, row))) throw notFound('Flag not found');
   if (row.status !== 'open') throw conflict(`This flag was already ${row.status} by ${row.reviewed_by ?? 'a reviewer'}`);
 
   const updated = await queryOne<FlagRow>(
@@ -238,7 +216,7 @@ export async function resolveFlag(actor: Actor, flagId: string, input: ResolveFl
  * able to see that a claim was made and refused.
  */
 export async function resolveHold(actor: Actor, loanId: string, input: HoldDecisionInput, req: Request) {
-  if (actor.role !== 'staff') throw forbidden('Only the enterprise can release or reject a held movement');
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can release or reject a held movement');
   const loan = await loadVisibleLoan(actor, loanId);
 
   const held = await queryOne<HeldTxn>(
@@ -261,7 +239,7 @@ export async function resolveHold(actor: Actor, loanId: string, input: HoldDecis
     );
 
     // A rejected disbursement never happened, so the loan goes back to the
-    // state where the lender can decide what to do next.
+    // state where staff can decide what to do next.
     if (held.type === 'disbursement') {
       await query(`UPDATE loans SET status = 'approved', held_reason = NULL WHERE id = $1 AND status = 'held'`, [loanId]);
     } else {
@@ -456,15 +434,12 @@ export interface FraudSummary {
 /** Header numbers for the review queue. */
 export async function getFraudSummary(actor: Actor): Promise<FraudSummary> {
   assertQueueReader(actor);
-  const lenderScope = actor.role === 'staff' ? actor.id : null;
   const rows = await query<{ severity: Severity; count: number }>(
     `SELECT f.severity, count(*)::int AS count
        FROM fraud_flags f
        LEFT JOIN loans l ON l.id = f.loan_id
       WHERE f.status = 'open'
-        AND ($1::uuid IS NULL OR l.lender_id = $1)
       GROUP BY f.severity`,
-    [lenderScope],
   );
 
   const [held, recent, ml] = await Promise.all([
@@ -472,24 +447,19 @@ export async function getFraudSummary(actor: Actor): Promise<FraudSummary> {
       `SELECT count(*)::int AS count
          FROM transactions t
          JOIN loans l ON l.id = t.loan_id
-        WHERE t.status = 'held' AND ($1::uuid IS NULL OR l.lender_id = $1)`,
-      [lenderScope],
+        WHERE t.status = 'held'`,
     ),
     queryOne<{ count: number }>(
       `SELECT count(*)::int AS count
          FROM fraud_flags f
          LEFT JOIN loans l ON l.id = f.loan_id
-        WHERE f.detected_at > now() - interval '24 hours'
-          AND ($1::uuid IS NULL OR l.lender_id = $1)`,
-      [lenderScope],
+        WHERE f.detected_at > now() - interval '24 hours'`,
     ),
     queryOne<{ count: number }>(
       `SELECT count(*)::int AS count
          FROM fraud_flags f
          LEFT JOIN loans l ON l.id = f.loan_id
-        WHERE f.status = 'open' AND f.source = 'ml'
-          AND ($1::uuid IS NULL OR l.lender_id = $1)`,
-      [lenderScope],
+        WHERE f.status = 'open' AND f.source = 'ml'`,
     ),
   ]);
 

@@ -34,12 +34,11 @@ describe('credit scoring', () => {
     return register(email, { fullName: 'Amani Mwangi', role: 'staff', inviteCode: 'smf-staff-invite-change-me', staffId: 'Amani Micro Credit' });
   }
 
-  async function apply(borrowerSession: Session, lenderId: string, overrides: Record<string, unknown> = {}) {
+  async function apply(borrowerSession: Session, overrides: Record<string, unknown> = {}) {
     const response = await request(app)
       .post('/api/v1/loans')
       .set(...authHeader(borrowerSession))
       .send({
-        lenderId,
         principalCents: 500_000,
         termCount: 4,
         frequency: 'weekly',
@@ -53,7 +52,7 @@ describe('credit scoring', () => {
   it('scores an application at submission and stores an advisory snapshot', async () => {
     const borrowerSession = await borrower('grace@scoring.test');
     const lenderSession = await lender();
-    const loan = await apply(borrowerSession, lenderSession.userId);
+    const loan = await apply(borrowerSession);
 
     expect(loan.score).not.toBeNull();
     expect(loan.score.score).toBeGreaterThanOrEqual(0);
@@ -79,12 +78,12 @@ describe('credit scoring', () => {
     const lenderSession = await lender();
 
     const modest = await borrower('modest@scoring.test');
-    const modestLoan = await apply(modest, lenderSession.userId, { principalCents: 100_000, termCount: 8 });
+    const modestLoan = await apply(modest, { principalCents: 100_000, termCount: 8 });
 
     const stretched = await borrower('stretched@scoring.test');
     // Same income, 20x the principal, daily repayments: the shape of the loan
     // every experienced reviewer recognises as trouble.
-    const stretchedLoan = await apply(stretched, lenderSession.userId, {
+    const stretchedLoan = await apply(stretched, {
       principalCents: 2_000_000,
       termCount: 30,
       frequency: 'daily',
@@ -95,10 +94,10 @@ describe('credit scoring', () => {
     expect(stretchedLoan.score.explanation.length).toBeGreaterThan(0);
   });
 
-  it('exposes the score to the borrower, the lender and an admin but to nobody else', async () => {
+  it('exposes the score to the borrower, staff and an admin but to nobody else', async () => {
     const borrowerSession = await borrower('grace@scoring.test');
     const lenderSession = await lender();
-    const loan = await apply(borrowerSession, lenderSession.userId);
+    const loan = await apply(borrowerSession);
 
     const asBorrower = await request(app)
       .get(`/api/v1/loans/${loan.id}/score`)
@@ -120,10 +119,10 @@ describe('credit scoring', () => {
     expect(asOutsider.status).toBe(404);
   });
 
-  it('lets the lender re-score, audits the run, and keeps the history', async () => {
+  it('lets staff re-score, audits the run, and keeps the history', async () => {
     const borrowerSession = await borrower('grace@scoring.test');
     const lenderSession = await lender();
-    const loan = await apply(borrowerSession, lenderSession.userId);
+    const loan = await apply(borrowerSession);
 
     const rescored = await request(app)
       .post(`/api/v1/loans/${loan.id}/score`)
@@ -154,7 +153,7 @@ describe('credit scoring', () => {
     const borrowerSession = await borrower('grace@scoring.test');
     const lenderSession = await lender();
 
-    const loan = await apply(borrowerSession, lenderSession.userId, {
+    const loan = await apply(borrowerSession, {
       principalCents: 2_000_000,
       termCount: 30,
       frequency: 'daily',

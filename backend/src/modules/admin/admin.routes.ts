@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireAuth, requireRole } from '../../middleware/auth';
 import { validate } from '../../middleware/validate';
 import { clientIp, userAgent } from '../../middleware/requestContext';
+import { getInstitutionLoanSettings, updateInstitutionLoanSettings } from './loanSettings.service';
 import { createAdminUser, listAdmins, reactivateAdmin, suspendAdmin } from './admin.service';
 
 /**
@@ -25,6 +26,37 @@ const createAdminSchema = z.object({
 
 const statusActionSchema = z.object({
   action: z.enum(['suspend', 'reactivate']),
+});
+
+const loanSettingsSchema = z
+  .object({
+    interestRateBps: z.number().int().min(0).max(10_000),
+    minPrincipalCents: z.number().int().positive().max(1_000_000_000),
+    maxPrincipalCents: z.number().int().positive().max(1_000_000_000),
+    maxInstallments: z.number().int().min(1).max(365),
+    allowedFrequencies: z.array(z.enum(['daily', 'weekly', 'monthly'])).min(1).max(3),
+    institutionName: z.string().trim().min(2).max(120),
+  })
+  .refine((value) => value.minPrincipalCents <= value.maxPrincipalCents, {
+    message: 'Minimum amount cannot exceed maximum amount',
+    path: ['maxPrincipalCents'],
+  })
+  .refine((value) => new Set(value.allowedFrequencies).size === value.allowedFrequencies.length, {
+    message: 'Repayment frequencies must be unique',
+    path: ['allowedFrequencies'],
+  });
+
+adminRouter.get('/loan-settings', async (_req, res) => {
+  res.json({ settings: await getInstitutionLoanSettings() });
+});
+
+adminRouter.put('/loan-settings', validate(loanSettingsSchema), async (req, res) => {
+  const settings = await updateInstitutionLoanSettings(
+    req.user!.id,
+    req.body as z.infer<typeof loanSettingsSchema>,
+    req,
+  );
+  res.json({ settings });
 });
 
 /** List all admin accounts. */

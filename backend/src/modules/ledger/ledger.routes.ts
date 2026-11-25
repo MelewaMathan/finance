@@ -10,8 +10,8 @@ import { anchorAuditTrail, anchorLoanTransactions, getLoanLedgerReport } from '.
  * Ledger routes.
  *
  * Reads are open to every authenticated role -- a borrower is entitled to
- * proof of their own payments. Writes (anchoring) are enterprise actions and
- * are restricted to the staff account operating the book.
+ * proof of their own payments. Writes (anchoring) are institution actions and
+ * are available to all institution staff.
  */
 export const ledgerRouter = Router();
 

@@ -38,7 +38,6 @@ describe('forensic dashboard', () => {
   /** A loan with a disbursement and one repayment: enough events to order. */
   async function activity(borrower: Session, lenderSession: Session): Promise<{ loanId: string; ref: string }> {
     const created = await request(app).post('/api/v1/loans').set(...authHeader(borrower)).send({
-      lenderId: lenderSession.userId,
       principalCents: 400_000,
       termCount: 4,
       frequency: 'weekly',
