@@ -51,6 +51,12 @@ export function LoginPage() {
             <h1 className="text-xl font-semibold text-slate-900">Sign in</h1>
             <p className="mt-1 text-sm text-slate-500">Sign in to continue to your SecureMicrofinance account.</p>
 
+            {searchParams.get('reason') === 'refreshed' ? (
+              <Alert tone="warning" className="mt-4">
+                Security notice: You were automatically logged out because the page was refreshed.
+              </Alert>
+            ) : null}
+
             <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
               {error ? <Alert>{error}</Alert> : null}
               <Field label="Email address" htmlFor="email">

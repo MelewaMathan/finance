@@ -88,6 +88,20 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+function isPageReload(): boolean {
+  if (typeof window === 'undefined' || !window.performance) return false;
+  try {
+    const navEntries = performance.getEntriesByType('navigation');
+    if (navEntries.length > 0) {
+      return (navEntries[0] as PerformanceNavigationTiming).type === 'reload';
+    }
+    // Fallback for older browsers
+    return (window.performance as unknown as { navigation?: { type?: number } }).navigation?.type === 1;
+  } catch {
+    return false;
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthContextValue['status']>('loading');
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -105,27 +119,79 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+
+    // Security feature: Automatically logout after refreshing a page
+    if (isPageReload()) {
+      const wasAuthenticated = sessionStorage.getItem('smf_authenticated') === 'true';
+      sessionStorage.removeItem('smf_authenticated');
+      setAccessToken(null);
+      setUser(null);
+      setProfile(null);
+      setMustChangePassword(false);
+      setStatus('anonymous');
+
+      // Call backend logout to revoke the refresh token cookie
+      void fetch('/api/v1/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+
+      if (wasAuthenticated && window.location.pathname !== '/login') {
+        window.location.replace('/login?reason=refreshed');
+      }
+      return;
+    }
+
     (async () => {
       try {
         const session = await bootstrapSession();
         if (cancelled) return;
         if (session) {
+          sessionStorage.setItem('smf_authenticated', 'true');
           setUser(session.user);
           setMustChangePassword(session.mustChangePassword === true);
           setStatus('authenticated');
           await loadProfile();
         } else {
+          sessionStorage.removeItem('smf_authenticated');
           setStatus('anonymous');
         }
       } catch {
-        if (!cancelled) setStatus('anonymous');
+        if (!cancelled) {
+          sessionStorage.removeItem('smf_authenticated');
+          setStatus('anonymous');
+        }
       }
     })();
     return () => { cancelled = true; };
   }, [loadProfile]);
 
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (sessionStorage.getItem('smf_authenticated') === 'true') {
+        try {
+          fetch('/api/v1/auth/logout', {
+            method: 'POST',
+            credentials: 'include',
+            keepalive: true,
+            headers: { Accept: 'application/json' },
+          });
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   const applySession = useCallback(
     async (session: SessionPayload, forceChange = false) => {
+      sessionStorage.setItem('smf_authenticated', 'true');
       setAccessToken(session.accessToken);
       setUser(session.user);
       setMustChangePassword(forceChange);
@@ -186,8 +252,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
+      sessionStorage.removeItem('smf_authenticated');
       await api<void>('/auth/logout', { method: 'POST', retryOn401: false });
     } finally {
+      sessionStorage.removeItem('smf_authenticated');
       setAccessToken(null);
       setUser(null);
       setProfile(null);
