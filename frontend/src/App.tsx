@@ -91,6 +91,14 @@ export default function App() {
           }
         />
         <Route
+          path="/borrower/apply/:loanType"
+          element={
+            <RequireRole role="borrower">
+              <ApplyLoanPage />
+            </RequireRole>
+          }
+        />
+        <Route
           path="/borrower/loans"
           element={
             <RequireRole role="borrower">
