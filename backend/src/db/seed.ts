@@ -216,13 +216,6 @@ async function upsertDemoPerson(person: DemoPerson, passwordHash: string): Promi
 // Main entry point
 // ---------------------------------------------------------------------------
 export async function seed(): Promise<void> {
-  await query(
-    `UPDATE institution_loan_settings
-        SET institution_name = $1
-      WHERE id = true AND updated_by IS NULL`,
-    [config.INSTITUTION_NAME],
-  );
-
   // Always seed the first admin.
   await seedAdmin();
 
