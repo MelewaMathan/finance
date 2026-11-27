@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { AppShell } from './components/AppShell';
+import { AppShell, PublicSupportLayout } from './components/AppShell';
 import { FullPageLoader } from './components/ui';
 import { homeFor, useAuth } from './lib/auth';
 import { LoginPage } from './pages/auth/LoginPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { HelpContactPage } from './pages/HelpContactPage';
+import { FaqsPage } from './pages/FaqsPage';
 import { BorrowerDashboard } from './pages/borrower/BorrowerDashboard';
 import { ApplyLoanPage } from './pages/borrower/ApplyLoanPage';
 import { MyLoansPage } from './pages/borrower/MyLoansPage';
@@ -40,6 +42,13 @@ function RequireRole({ role, children }: { role: 'borrower' | 'staff' | 'admin';
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== role) return <Navigate to={homeFor(user.role)} replace />;
   return <>{children}</>;
+}
+
+function SupportShell() {
+  const { user, status } = useAuth();
+  if (status === 'loading') return <FullPageLoader />;
+  if (user) return <AppShell />;
+  return <PublicSupportLayout />;
 }
 
 function RootRedirect() {
@@ -204,6 +213,12 @@ export default function App() {
             </RequireRole>
           }
         />
+      </Route>
+
+      {/* Support & Public Information pages */}
+      <Route element={<SupportShell />}>
+        <Route path="/help" element={<HelpContactPage />} />
+        <Route path="/faqs" element={<FaqsPage />} />
       </Route>
 
       <Route path="*" element={<NotFoundPage />} />

@@ -9,7 +9,7 @@ import { LogoMark } from './ui';
  * mobile. Navigation is derived from the authenticated role, so a borrower
  * never sees the staff or admin destinations (the API enforces the same rule).
  */
-type IconName = 'home' | 'file' | 'cash' | 'shield' | 'clock' | 'check' | 'report' | 'user' | 'bell';
+type IconName = 'home' | 'file' | 'cash' | 'shield' | 'clock' | 'check' | 'report' | 'user' | 'bell' | 'help' | 'question';
 
 const ICON_PATHS: Record<IconName, string> = {
   home: 'M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1v-10.5z',
@@ -21,6 +21,8 @@ const ICON_PATHS: Record<IconName, string> = {
   report: 'M5 3h14v18H5V3zm3 4h8v1.5H8V7zm0 4h8v1.5H8V11zm0 4h5v1.5H8V15z',
   user: 'M12 12a4 4 0 100-8 4 4 0 000 8zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5z',
   bell: 'M12 2a6 6 0 00-6 6v3.6L4 15v2h16v-2l-2-3.4V8a6 6 0 00-6-6zm0 20a2.5 2.5 0 002.45-2h-4.9A2.5 2.5 0 0012 22z',
+  help: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 16h-2v-2h2v2zm1.07-7.75l-.9.92C12.45 11.9 12 12.5 12 14h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H7c0-2.76 2.24-5 5-5s5 2.24 5 5c0 .88-.36 1.68-.93 2.25z',
+  question: 'M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z',
 };
 
 function Icon({ name }: { name: IconName }) {
@@ -89,6 +91,26 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
             {item.label}
           </NavLink>
         ))}
+
+        <div className="pt-4 mt-4 border-t border-slate-100">
+          <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">Support</p>
+          <NavLink
+            to="/help"
+            onClick={onNavigate}
+            className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+          >
+            <Icon name="help" />
+            Help & Contact
+          </NavLink>
+          <NavLink
+            to="/faqs"
+            onClick={onNavigate}
+            className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
+          >
+            <Icon name="question" />
+            FAQs
+          </NavLink>
+        </div>
       </nav>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-3">
@@ -208,7 +230,46 @@ export function AuthLayout({
       </header>
       <main className="flex flex-1 items-center justify-center px-4 pb-12 pt-4">{children}</main>
       <footer className="px-6 py-4 text-center text-xs text-brand-300">
+        <div className="mb-2 flex items-center justify-center gap-4 text-brand-200">
+          <Link to="/help" className="hover:text-white underline">
+            Help & Contact
+          </Link>
+          <span>•</span>
+          <Link to="/faqs" className="hover:text-white underline">
+            FAQs
+          </Link>
+        </div>
         Demo deployment · synthetic data only · no real personal information
+      </footer>
+    </div>
+  );
+}
+
+export function PublicSupportLayout({ children }: { children?: ReactNode }) {
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col">
+      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-6 py-3.5 backdrop-blur">
+        <Link to="/" className="flex items-center gap-3">
+          <LogoMark className="h-8 w-8" />
+          <span className="font-semibold text-slate-900 text-sm sm:text-base">SecureMicrofinance</span>
+        </Link>
+        <div className="flex items-center gap-3 sm:gap-4">
+          <Link to="/faqs" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
+            FAQs
+          </Link>
+          <Link to="/help" className="text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900">
+            Help & Contact
+          </Link>
+          <Link to="/login" className="btn-brand text-xs sm:text-sm py-1.5 px-3">
+            Sign in
+          </Link>
+        </div>
+      </header>
+      <main className="flex-1 mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-8">
+        {children ?? <Outlet />}
+      </main>
+      <footer className="border-t border-slate-200 bg-white px-6 py-4 text-center text-xs text-slate-500">
+        SecureMicrofinance &copy; {new Date().getFullYear()} • Blockchain-verified lending platform
       </footer>
     </div>
   );
