@@ -120,17 +120,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    // Security feature: Automatically logout after refreshing a page
-    if (isPageReload()) {
+    // Security feature: Automatically logout non-admin users after refreshing a page.
+    // The admin page and admin role are explicitly exempt from this restriction.
+    const storedRole = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('smf_role') : null;
+    const isAdmin = storedRole === 'admin' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
+
+    if (isPageReload() && !isAdmin) {
       const wasAuthenticated = sessionStorage.getItem('smf_authenticated') === 'true';
       sessionStorage.removeItem('smf_authenticated');
+      sessionStorage.removeItem('smf_role');
       setAccessToken(null);
       setUser(null);
       setProfile(null);
       setMustChangePassword(false);
       setStatus('anonymous');
 
-      // Call backend logout to revoke the refresh token cookie
+      // Call backend logout to revoke the refresh token cookie for non-admin
       void fetch('/api/v1/auth/logout', {
         method: 'POST',
         credentials: 'include',
@@ -149,17 +154,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         if (session) {
           sessionStorage.setItem('smf_authenticated', 'true');
+          sessionStorage.setItem('smf_role', session.user.role);
           setUser(session.user);
           setMustChangePassword(session.mustChangePassword === true);
           setStatus('authenticated');
           await loadProfile();
         } else {
           sessionStorage.removeItem('smf_authenticated');
+          sessionStorage.removeItem('smf_role');
           setStatus('anonymous');
         }
       } catch {
         if (!cancelled) {
           sessionStorage.removeItem('smf_authenticated');
+          sessionStorage.removeItem('smf_role');
           setStatus('anonymous');
         }
       }
@@ -169,6 +177,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handleBeforeUnload = () => {
+      const storedRole = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('smf_role') : null;
+      const isAdmin = storedRole === 'admin' || (typeof window !== 'undefined' && window.location.pathname.startsWith('/admin'));
+      // Admin page and admin role are completely exempt from auto-logout on refresh
+      if (isAdmin) return;
+
       if (sessionStorage.getItem('smf_authenticated') === 'true') {
         try {
           fetch('/api/v1/auth/logout', {
@@ -192,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const applySession = useCallback(
     async (session: SessionPayload, forceChange = false) => {
       sessionStorage.setItem('smf_authenticated', 'true');
+      sessionStorage.setItem('smf_role', session.user.role);
       setAccessToken(session.accessToken);
       setUser(session.user);
       setMustChangePassword(forceChange);
@@ -253,9 +267,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     try {
       sessionStorage.removeItem('smf_authenticated');
+      sessionStorage.removeItem('smf_role');
       await api<void>('/auth/logout', { method: 'POST', retryOn401: false });
     } finally {
       sessionStorage.removeItem('smf_authenticated');
+      sessionStorage.removeItem('smf_role');
       setAccessToken(null);
       setUser(null);
       setProfile(null);
