@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Card, PageHeader, Spinner } from '../../components/ui';
+import { DEFAULT_STAFF_INVITE_CODES } from '../../lib/auth';
 import { messageOf } from '../../lib/errors';
 import { formatDateTime } from '../../lib/format';
 import {
@@ -13,7 +14,7 @@ import {
   type StaffAccount,
 } from '../../lib/loginApproval';
 
-type Tab = 'pending' | 'accounts' | 'history';
+type Tab = 'pending' | 'accounts' | 'history' | 'invites';
 
 const STATUS_TONE: Record<string, 'neutral' | 'warning' | 'success' | 'danger' | 'info'> = {
   active: 'success',
@@ -35,6 +36,7 @@ export function AccessRequestsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [denyTarget, setDenyTarget] = useState<string | null>(null);
   const [denyReason, setDenyReason] = useState('');
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -98,6 +100,7 @@ export function AccessRequestsPage() {
           { key: 'pending', label: 'Login requests', count: pendingCount },
           { key: 'accounts', label: 'Staff accounts', count: pendingStaff },
           { key: 'history', label: 'History' },
+          { key: 'invites', label: 'Invite codes', count: DEFAULT_STAFF_INVITE_CODES.length },
         ] as { key: Tab; label: string; count?: number }[]).map((t) => (
           <button
             key={t.key}
@@ -278,6 +281,51 @@ export function AccessRequestsPage() {
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Invite Codes */}
+      {tab === 'invites' && (
+        <Card title="Active Staff Registration Invite Codes">
+          <p className="text-sm text-slate-600 mb-4">
+            Distribute any of these official invite codes to authorized staff members so they can register at{' '}
+            <strong className="text-slate-900 font-mono">/register</strong>. After registration, their account will be
+            placed on hold under <span className="font-semibold text-slate-900">Staff accounts</span> until you approve
+            it.
+          </p>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            {DEFAULT_STAFF_INVITE_CODES.map((code, index) => (
+              <div
+                key={code}
+                className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/50 p-3"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-600">
+                    {index + 1}
+                  </span>
+                  <span className="font-mono text-sm font-bold text-slate-800">{code}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(code);
+                    setCopiedCode(code);
+                    setTimeout(() => setCopiedCode(null), 2000);
+                  }}
+                  className="rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100"
+                >
+                  {copiedCode === code ? 'Copied! ✓' : 'Copy'}
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-xl bg-amber-50 p-3.5 text-xs text-amber-900 border border-amber-200">
+            <strong>Security Notice:</strong> Staff accounts cannot log in immediately after registration. Every new
+            staff user must first be reviewed and approved by an administrator under the{' '}
+            <em>Staff accounts</em> tab.
+          </div>
         </Card>
       )}
     </div>

@@ -78,6 +78,36 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export const DEFAULT_STAFF_INVITE_CODES = [
+  'SMF-STAFF-ALPHA-01',
+  'SMF-STAFF-BRAVO-02',
+  'SMF-STAFF-CHARLIE-03',
+  'SMF-STAFF-DELTA-04',
+  'SMF-STAFF-ECHO-05',
+  'SMF-STAFF-FOXTROT-06',
+  'SMF-STAFF-GOLF-07',
+  'SMF-STAFF-HOTEL-08',
+  'SMF-STAFF-INDIA-09',
+  'SMF-STAFF-JULIET-10',
+];
+
+export function verifyStaffInviteCode(providedCode: string | undefined): boolean {
+  if (!providedCode || typeof providedCode !== 'string') return false;
+  const normalized = providedCode.trim().toUpperCase();
+
+  const customCodes = (config.STAFF_INVITE_CODE || '')
+    .split(',')
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+
+  const allowed = new Set([
+    ...DEFAULT_STAFF_INVITE_CODES.map((c) => c.toUpperCase()),
+    ...customCodes,
+  ]);
+
+  return allowed.has(normalized);
+}
+
 export async function register(
   input: RegisterInput,
   context: RefreshContext & { requestId?: string },
@@ -90,7 +120,7 @@ export async function register(
   // backend regardless of what the UI sends). Admin accounts cannot be
   // created through this endpoint at all.
   if (input.role === 'staff') {
-    if (!input.inviteCode || input.inviteCode !== config.STAFF_INVITE_CODE) {
+    if (!verifyStaffInviteCode(input.inviteCode)) {
       throw unauthorized('Invalid or missing staff invite code');
     }
   }

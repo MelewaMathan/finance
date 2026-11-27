@@ -144,13 +144,18 @@ export function RegisterPage() {
                     />
                   </Field>
 
-                  <Field label="Invite code" htmlFor="inviteCode" error={errors.inviteCode}>
+                  <Field
+                    label="Staff invite code"
+                    htmlFor="inviteCode"
+                    error={errors.inviteCode}
+                    hint="Enter any authorized staff invite code (e.g. SMF-STAFF-ALPHA-01)."
+                  >
                     <TextInput
                       id="inviteCode"
                       required
                       value={inviteCode}
                       onChange={(e) => setInviteCode(e.target.value)}
-                      placeholder="Provided by your administrator"
+                      placeholder="e.g. SMF-STAFF-ALPHA-01"
                     />
                   </Field>
                 </>

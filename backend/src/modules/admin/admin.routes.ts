@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate';
 import { clientIp, userAgent } from '../../middleware/requestContext';
 import { getInstitutionLoanSettings, updateInstitutionLoanSettings } from './loanSettings.service';
 import { createAdminUser, listAdmins, reactivateAdmin, suspendAdmin } from './admin.service';
+import { DEFAULT_STAFF_INVITE_CODES } from '../auth/auth.service';
 
 /**
  * Admin-management endpoints — admin role required on every route.
@@ -48,6 +49,10 @@ const loanSettingsSchema = z
 
 adminRouter.get('/loan-settings', async (_req, res) => {
   res.json({ settings: await getInstitutionLoanSettings() });
+});
+
+adminRouter.get('/staff-invite-codes', async (_req, res) => {
+  res.json({ codes: DEFAULT_STAFF_INVITE_CODES });
 });
 
 adminRouter.put('/loan-settings', validate(loanSettingsSchema), async (req, res) => {

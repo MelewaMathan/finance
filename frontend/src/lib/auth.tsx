@@ -17,6 +17,19 @@ import type { AwaitingApprovalResponse } from './loginApproval';
  * user is restored without any stored credential; otherwise they are
  * anonymous. The access token never reaches localStorage or sessionStorage.
  */
+export const DEFAULT_STAFF_INVITE_CODES = [
+  'SMF-STAFF-ALPHA-01',
+  'SMF-STAFF-BRAVO-02',
+  'SMF-STAFF-CHARLIE-03',
+  'SMF-STAFF-DELTA-04',
+  'SMF-STAFF-ECHO-05',
+  'SMF-STAFF-FOXTROT-06',
+  'SMF-STAFF-GOLF-07',
+  'SMF-STAFF-HOTEL-08',
+  'SMF-STAFF-INDIA-09',
+  'SMF-STAFF-JULIET-10',
+];
+
 export type ProfileCompletenessField =
   | 'nationalId'
   | 'phone'
