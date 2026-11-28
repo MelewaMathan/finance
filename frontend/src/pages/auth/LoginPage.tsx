@@ -26,7 +26,7 @@ export function LoginPage() {
     setError(null);
     try {
       const result = await login(email, password);
-      if (result && 'awaitingApproval' in result) setPending(result);
+      if (result && 'status' in result && result.status === 'awaiting_approval') setPending(result);
     } catch {
       setError('Invalid email or password');
     } finally {

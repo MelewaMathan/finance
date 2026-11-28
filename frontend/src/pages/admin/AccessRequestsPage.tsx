@@ -74,7 +74,12 @@ export function AccessRequestsPage() {
   async function changeAccountStatus(id: string, action: 'approve-account' | 'suspend' | 'reactivate') {
     try {
       await setStaffAccountStatus(id, action);
-      setNotice('Account updated.');
+      setNotice(
+        action === 'approve-account'
+          ? 'Account activated. The staff member can now log in — their login request will appear in the "Login requests" tab for your final approval.'
+          : 'Account updated.',
+      );
+      if (action === 'approve-account') setTab('pending');
       await load();
     } catch (e) {
       setError(messageOf(e));
@@ -127,8 +132,11 @@ export function AccessRequestsPage() {
       {/* Pending login requests */}
       {tab === 'pending' && !busy && (
         <Card>
+          <div className="mb-4 rounded-xl bg-blue-50 border border-blue-200 p-3.5 text-xs text-blue-900">
+            <strong>How the two-step approval works:</strong> Staff members first register (account goes to <em>pending</em> under <strong>Staff accounts</strong>). Once you <strong>approve the account</strong> there, the staff member can log in — their login attempt then appears here as a <em>login request</em> for your final approval before they can access the dashboard.
+          </div>
           {pendingReqs.length === 0 ? (
-            <p className="text-sm text-slate-500">No pending login requests.</p>
+            <p className="text-sm text-slate-500">No pending login requests. If a staff member just registered, go to <strong>Staff accounts</strong> and approve their account first.</p>
           ) : (
             <div className="divide-y divide-slate-100">
               {pendingReqs.map((r) => (
