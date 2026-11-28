@@ -4,6 +4,7 @@ import { AppShell, PublicSupportLayout } from './components/AppShell';
 import { FullPageLoader } from './components/ui';
 import { homeFor, useAuth } from './lib/auth';
 import { LoginPage } from './pages/auth/LoginPage';
+import { LandingPage } from './pages/LandingPage';
 import { RegisterPage } from './pages/auth/RegisterPage';
 import { ProfilePage } from './pages/ProfilePage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -54,7 +55,7 @@ function SupportShell() {
 function RootRedirect() {
   const { status, user, mustChangePassword } = useAuth();
   if (status === 'loading') return <FullPageLoader />;
-  if (status === 'anonymous' || !user) return <Navigate to="/login" replace />;
+  if (status === 'anonymous' || !user) return <LandingPage />;
   if (mustChangePassword) return <Navigate to="/set-password" replace />;
   return <Navigate to={homeFor(user.role)} replace />;
 }
