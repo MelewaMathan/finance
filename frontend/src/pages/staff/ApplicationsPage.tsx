@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, EmptyState, PageHeader, Spinner, TextInput } from '../../components/ui';
+import { STAFF_TIER_LABEL, useAuth } from '../../lib/auth';
 import { formatDate, formatMoney, percentFromBps } from '../../lib/format';
 import { listLoans, RISK_LABEL, RISK_TONE, STATUS_LABEL, STATUS_TONE, type LoanStatus, type LoanSummary } from '../../lib/loans';
 
@@ -17,7 +18,15 @@ const TABS: Array<{ key: LoanStatus | 'all'; label: string }> = [
 
 /** Institution-wide staff application queue. */
 export function ApplicationsPage() {
-  const [tab, setTab] = useState<LoanStatus | 'all'>('pending');
+  const { user } = useAuth();
+  const staffTier = user?.staffTier ?? 'regular';
+  const defaultTab: LoanStatus =
+    staffTier === 'supervisor'
+      ? 'supervisor_review'
+      : staffTier === 'finance_manager'
+        ? 'manager_review'
+        : 'pending';
+  const [tab, setTab] = useState<LoanStatus | 'all'>(defaultTab);
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(1);
   const [loans, setLoans] = useState<LoanSummary[] | null>(null);
@@ -52,7 +61,7 @@ export function ApplicationsPage() {
     <div>
       <PageHeader
         title="Applications"
-        subtitle="Review all institution applications, verify identity, and confirm terms before sealing the agreement."
+        subtitle={`Signed in as ${STAFF_TIER_LABEL[staffTier]}. Review applications in your queue and track multi-stage approvals.`}
       />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

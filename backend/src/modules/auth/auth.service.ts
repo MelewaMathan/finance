@@ -3,7 +3,7 @@ import { config } from '../../config/env';
 import { query, queryOne, withTransaction } from '../../db/pool';
 import { conflict, locked, unauthorized } from '../../lib/errors';
 import { recordAudit } from '../audit/audit.service';
-import type { Role } from '../../types/express';
+import type { Role, StaffTier } from '../../types/express';
 import {
   issueRefreshToken,
   revokeAllSessions,
@@ -62,15 +62,24 @@ export interface PublicUser {
   email: string;
   fullName: string;
   role: Role;
+  staffTier?: StaffTier | null;
   createdAt: string;
 }
 
-function toPublicUser(row: { id: string; email: string; full_name: string; role: Role; created_at: Date }): PublicUser {
+function toPublicUser(row: {
+  id: string;
+  email: string;
+  full_name: string;
+  role: Role;
+  staff_tier?: StaffTier | null;
+  created_at: Date;
+}): PublicUser {
   return {
     id: row.id,
     email: row.email,
     fullName: row.full_name,
     role: row.role,
+    staffTier: row.role === 'staff' ? (row.staff_tier ?? 'regular') : null,
     createdAt: new Date(row.created_at).toISOString(),
   };
 }
@@ -197,7 +206,14 @@ export async function login(
     locked_until: Date | null;
     created_at: Date;
     must_change_password: boolean;
-  }>('SELECT * FROM users WHERE email = $1', [email]);
+    staff_tier: StaffTier | null;
+  }>(
+    `SELECT u.*, sp.staff_tier
+       FROM users u
+       LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+      WHERE u.email = $1`,
+    [email],
+  );
 
   // Constant-ish work regardless of whether the account exists.
   const hashToCheck = row?.password_hash ?? '$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinvalidinv';
