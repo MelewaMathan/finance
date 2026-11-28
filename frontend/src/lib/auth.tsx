@@ -197,8 +197,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
+    const handleSessionRevoked = () => {
+      if (sessionStorage.getItem('smf_authenticated') === 'true') {
+        sessionStorage.removeItem('smf_authenticated');
+        sessionStorage.removeItem('smf_role');
+        setAccessToken(null);
+        setUser(null);
+        setProfile(null);
+        setMustChangePassword(false);
+        setStatus('anonymous');
+        if (window.location.pathname !== '/login') {
+          window.location.replace('/login?reason=concurrent');
+        }
+      }
+    };
+    window.addEventListener('smf:session-revoked', handleSessionRevoked);
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('smf:session-revoked', handleSessionRevoked);
     };
   }, []);
 

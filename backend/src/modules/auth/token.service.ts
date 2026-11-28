@@ -202,4 +202,5 @@ export async function revokeRefreshToken(rawToken: string): Promise<void> {
 
 export async function revokeAllSessions(userId: string): Promise<void> {
   await query('UPDATE refresh_tokens SET revoked_at = now() WHERE user_id = $1 AND revoked_at IS NULL', [userId]);
+  await query('UPDATE users SET tokens_valid_after = now() WHERE id = $1', [userId]);
 }

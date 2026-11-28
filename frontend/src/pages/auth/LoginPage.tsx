@@ -57,6 +57,12 @@ export function LoginPage() {
               </Alert>
             ) : null}
 
+            {searchParams.get('reason') === 'concurrent' ? (
+              <Alert tone="warning" className="mt-4">
+                Security alert: Your account was signed in from another device. Both devices have been logged out — admin approval is required to sign back in.
+              </Alert>
+            ) : null}
+
             <form className="mt-6 space-y-4" onSubmit={onSubmit} noValidate>
               {error ? <Alert>{error}</Alert> : null}
               <Field label="Email address" htmlFor="email">

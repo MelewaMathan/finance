@@ -6,6 +6,7 @@ import { recordAudit } from '../audit/audit.service';
 import type { Role } from '../../types/express';
 import {
   issueRefreshToken,
+  revokeAllSessions,
   signAccessToken,
   type RefreshContext,
   type RefreshIssue,
@@ -254,37 +255,49 @@ export async function login(
   }
 
   // -------------------------------------------------------------------------
-  // Staff login: correct password + active account → create an approval
-  // request and return a poll token instead of a real session.
+  // Staff login:
+  //   - If already logged in on another device (active refresh token exists),
+  //     log BOTH devices out immediately (revokeAllSessions) and require admin
+  //     approval before signing back in.
+  //   - Otherwise, allow normal sign-in without requiring admin approval.
   // -------------------------------------------------------------------------
   if (row.role === 'staff') {
-    // Reset failed_attempts on a correct password, even though we won't issue
-    // a session yet — the lockout mechanism is about credential stuffing, not
-    // about the approval flow.
-    await query(
-      'UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1',
+    const activeSession = await queryOne<{ id: string }>(
+      `SELECT id FROM refresh_tokens
+        WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()
+        LIMIT 1`,
       [row.id],
     );
 
-    await recordAudit({
-      actorUserId: row.id,
-      actorRole: row.role,
-      action: 'auth.login_staff_credentials_ok',
-      entityType: 'user',
-      entityId: row.id,
-      detail: { email, requiresApproval: true },
-      ip: context.ip ?? null,
-      userAgent: context.userAgent ?? null,
-      requestId: context.requestId ?? null,
-    });
+    if (activeSession) {
+      await query(
+        'UPDATE users SET failed_attempts = 0, locked_until = NULL WHERE id = $1',
+        [row.id],
+      );
 
-    const approval = await createLoginApproval(row.id, context);
-    return {
-      awaitingApproval: true,
-      requestId: approval.requestId,
-      pollToken: approval.pollToken,
-      expiresAt: approval.expiresAt.toISOString(),
-    };
+      // Log both devices out: revoke all refresh tokens and invalidate existing access JWTs.
+      await revokeAllSessions(row.id);
+
+      await recordAudit({
+        actorUserId: row.id,
+        actorRole: row.role,
+        action: 'auth.concurrent_login_detected',
+        entityType: 'user',
+        entityId: row.id,
+        detail: { email, requiresApproval: true, actionTaken: 'all_sessions_revoked' },
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
+        requestId: context.requestId ?? null,
+      });
+
+      const approval = await createLoginApproval(row.id, context);
+      return {
+        awaitingApproval: true,
+        requestId: approval.requestId,
+        pollToken: approval.pollToken,
+        expiresAt: approval.expiresAt.toISOString(),
+      };
+    }
   }
 
   // -------------------------------------------------------------------------

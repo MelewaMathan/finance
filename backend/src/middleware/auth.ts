@@ -8,6 +8,7 @@ const accessPayload = z.object({
   sub: z.string().uuid(),
   role: z.enum(['borrower', 'staff', 'admin']),
   typ: z.literal('access'),
+  iat: z.number().optional(),
 });
 
 /**
@@ -33,9 +34,10 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       full_name: string;
       status: string;
       must_change_password: boolean;
+      tokens_valid_after: Date | null;
       staff_tier: StaffTier | null;
     }>(
-      `SELECT u.id, u.email, u.role, u.full_name, u.status, u.must_change_password, sp.staff_tier
+      `SELECT u.id, u.email, u.role, u.full_name, u.status, u.must_change_password, u.tokens_valid_after, sp.staff_tier
          FROM users u
          LEFT JOIN staff_profiles sp ON sp.user_id = u.id
         WHERE u.id = $1`,
@@ -43,6 +45,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     );
     if (!user) throw unauthorized('Account no longer exists');
     if (user.status !== 'active') throw forbidden('This account is not active');
+    if (user.tokens_valid_after && parsed.iat) {
+      const validAfterSec = Math.floor(new Date(user.tokens_valid_after).getTime() / 1000);
+      if (parsed.iat < validAfterSec) {
+        throw unauthorized('Session revoked due to login on another device');
+      }
+    }
     if (
       user.must_change_password &&
       !(req.method === 'POST' && req.originalUrl.split('?')[0] === '/api/v1/auth/password/force')

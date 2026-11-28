@@ -88,6 +88,9 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     if (error instanceof ApiError && error.status === 401 && retryOn401 && !isAuthPath) {
       const refreshed = await refreshAccessToken();
       if (refreshed) return rawRequest<T>(path, options);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('smf:session-revoked'));
+      }
     }
     throw error;
   }

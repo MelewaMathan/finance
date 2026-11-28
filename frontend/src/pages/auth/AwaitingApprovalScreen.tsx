@@ -122,8 +122,9 @@ export function AwaitingApprovalScreen({ pending, onCancel }: Props) {
       </div>
 
       <p className="mt-3 text-sm text-slate-600">
-        Your login credentials were accepted. An admin must approve this session before
-        you can access the dashboard.
+        Your account is already signed in on another device. For your security,{' '}
+        <strong>both devices have been logged out</strong> and an administrator must approve
+        this login before you can access the dashboard.
       </p>
 
       <div className="mt-5 rounded-xl bg-slate-50 p-4 text-center">
