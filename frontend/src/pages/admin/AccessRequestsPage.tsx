@@ -40,9 +40,11 @@ export function AccessRequestsPage() {
   const [denyReason, setDenyReason] = useState('');
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setBusy(true);
-    setError(null);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) {
+      setBusy(true);
+      setError(null);
+    }
     try {
       const [reqs, hist, accounts] = await Promise.all([
         fetchPendingRequests(),
@@ -53,13 +55,28 @@ export function AccessRequestsPage() {
       setHistory(hist);
       setStaff(accounts);
     } catch (e) {
-      setError(messageOf(e));
+      if (!silent) setError(messageOf(e));
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load(false);
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void load(true);
+      }
+    }, 4_000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void load(true);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [load]);
 
   async function decide(id: string, decision: 'approve' | 'deny', reason?: string) {
     try {
@@ -106,6 +123,12 @@ export function AccessRequestsPage() {
       <PageHeader
         title="Access requests"
         subtitle="Review staff login requests and manage staff account status."
+        actions={
+          <span className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            Live · auto-updating
+          </span>
+        }
       />
 
       {error && <Alert className="mb-4">{error}</Alert>}
