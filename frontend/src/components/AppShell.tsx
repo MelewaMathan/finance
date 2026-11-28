@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
-import { homeFor, ROLE_LABEL, useAuth } from '../lib/auth';
+import { homeFor, ROLE_LABEL, STAFF_TIER_LABEL, useAuth } from '../lib/auth';
 import { initials } from '../lib/format';
 import { LogoMark } from './ui';
 
@@ -122,7 +122,11 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
           </span>
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-slate-900">{user.fullName}</p>
-            <p className="truncate text-xs text-slate-500">{ROLE_LABEL[user.role]}</p>
+            <p className="truncate text-xs text-slate-500">
+              {user.role === 'staff'
+                ? STAFF_TIER_LABEL[user.staffTier ?? 'regular']
+                : ROLE_LABEL[user.role]}
+            </p>
           </div>
         </div>
         <button

@@ -13,7 +13,7 @@ import {
   VerifiedBadge,
 } from '../../components/ui';
 import { ApiError } from '../../lib/api';
-import { useAuth } from '../../lib/auth';
+import { STAFF_TIER_LABEL, useAuth } from '../../lib/auth';
 import { formatDate, formatDateTime, formatMoney, percentFromBps, shortHash } from '../../lib/format';
 import {
   anchorLoanTransactions,
@@ -42,6 +42,8 @@ import {
   RISK_TONE,
   STATUS_LABEL,
   STATUS_TONE,
+  submitStaffRecommendation,
+  submitSupervisorRecommendation,
   verifyLoan,
   type LoanDetail,
 } from '../../lib/loans';
@@ -70,6 +72,7 @@ export function LoanDetailPage() {
 
   const [ratePercent, setRatePercent] = useState('10');
   const [decisionNote, setDecisionNote] = useState('');
+  const [reviewNote, setReviewNote] = useState('');
   const [method, setMethod] = useState<'cash' | 'mobile_money' | 'bank'>('cash');
   const [mobileCode, setMobileCode] = useState('');
 
@@ -141,12 +144,24 @@ export function LoanDetailPage() {
   if (!loan) return <Spinner label="Loading loan" />;
 
   const isStaff = user?.role === 'staff';
-  const canVerify = isStaff && (loan.status === 'pending' || loan.status === 'under_review');
-  const canDecide = isStaff && (loan.status === 'pending' || loan.status === 'under_review') && Boolean(loan.identityVerified);
-  const canDisburse = isStaff && loan.status === 'approved';
+  const staffTier = user?.staffTier ?? 'regular';
+  const canVerify = isStaff && staffTier === 'regular' && (loan.status === 'pending' || loan.status === 'under_review');
+  const canStaffRecommend =
+    isStaff && staffTier === 'regular' && (loan.status === 'pending' || loan.status === 'under_review') && Boolean(loan.identityVerified);
+  const canSupervisorRecommend = isStaff && staffTier === 'supervisor' && loan.status === 'supervisor_review';
+  const canDecide = isStaff && staffTier === 'finance_manager' && loan.status === 'manager_review';
+  const canDisburse = isStaff && staffTier === 'finance_manager' && loan.status === 'approved';
   const canPay = (user?.role === 'staff' || user?.role === 'borrower') && (loan.status === 'disbursed' || loan.status === 'active');
   const backTo = isStaff ? '/staff/applications' : '/borrower/loans';
   const isStaffReviewer = isStaff;
+
+  const aiAdvice = loan.score
+    ? loan.score.riskLevel === 'low'
+      ? { label: 'AI Advice: Recommend Approve', tone: 'success' as const }
+      : loan.score.riskLevel === 'medium'
+        ? { label: 'AI Advice: Caution / Manual Check', tone: 'warning' as const }
+        : { label: 'AI Advice: Recommend Deny (High Risk)', tone: 'danger' as const }
+    : null;
 
   // Advisory only: shown to inform the decision, never to make it.
   const scoreCard = (
@@ -163,6 +178,11 @@ export function LoanDetailPage() {
             </div>
             <Badge tone={RISK_TONE[loan.score.riskLevel]}>{RISK_LABEL[loan.score.riskLevel]}</Badge>
           </div>
+          {aiAdvice ? (
+            <div className="rounded-xl bg-slate-50 p-2.5">
+              <Badge tone={aiAdvice.tone}>{aiAdvice.label}</Badge>
+            </div>
+          ) : null}
           {loan.score.defaultProbability !== null ? (
             <p className="text-xs text-slate-500">
               Modelled default probability {(loan.score.defaultProbability * 100).toFixed(1)}%
@@ -295,13 +315,97 @@ export function LoanDetailPage() {
 
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <div className="space-y-5 lg:col-span-2">
-          {canVerify || canDecide || canDisburse ? (
-            <Card title={isStaffReviewer ? 'Your decision' : 'Actions'}>
+          {isStaff ? (
+            <Card
+              title="3-Tier Approval Trail"
+              description={`Your role: ${STAFF_TIER_LABEL[staffTier]}. Loans require Regular Staff → Supervisor → Finance Manager sign-off.`}
+            >
+              <div className="space-y-3 text-sm">
+                <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">1. Regular Staff Review (with AI Credit Scoring)</p>
+                    {loan.staffReview ? (
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Submitted by <strong>{loan.staffReview.byName ?? 'Staff'}</strong>
+                        {loan.staffReview.at ? ` · ${formatDateTime(loan.staffReview.at)}` : ''}
+                        {loan.staffReview.note ? ` — "${loan.staffReview.note}"` : ''}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-slate-500">Awaiting Regular Staff identity verification & submission to Supervisor.</p>
+                    )}
+                  </div>
+                  <Badge
+                    tone={
+                      loan.staffReview
+                        ? loan.staffReview.recommendation === 'approve'
+                          ? 'success'
+                          : 'danger'
+                        : 'warning'
+                    }
+                  >
+                    {loan.staffReview ? `Suggested: ${loan.staffReview.recommendation}` : 'Pending'}
+                  </Badge>
+                </div>
+
+                <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">2. Supervisor Credibility Check</p>
+                    {loan.supervisorReview ? (
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Submitted by <strong>{loan.supervisorReview.byName ?? 'Supervisor'}</strong>
+                        {loan.supervisorReview.at ? ` · ${formatDateTime(loan.supervisorReview.at)}` : ''}
+                        {loan.supervisorReview.note ? ` — "${loan.supervisorReview.note}"` : ''}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-slate-500">Awaiting Supervisor credibility check & suggestion to Finance Manager.</p>
+                    )}
+                  </div>
+                  <Badge
+                    tone={
+                      loan.supervisorReview
+                        ? loan.supervisorReview.recommendation === 'approve'
+                          ? 'success'
+                          : 'danger'
+                        : loan.status === 'supervisor_review'
+                          ? 'info'
+                          : 'neutral'
+                    }
+                  >
+                    {loan.supervisorReview
+                      ? `Suggested: ${loan.supervisorReview.recommendation}`
+                      : loan.status === 'supervisor_review'
+                        ? 'In queue'
+                        : 'Waiting'}
+                  </Badge>
+                </div>
+
+                <div className="flex items-start justify-between gap-3 rounded-xl bg-slate-50 p-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">3. Finance Manager Final Decision & Disbursement</p>
+                    {loan.decidedAt ? (
+                      <p className="mt-0.5 text-xs text-slate-600">
+                        Decided {formatDateTime(loan.decidedAt)}
+                        {loan.decisionNote ? ` — "${loan.decisionNote}"` : ''}
+                      </p>
+                    ) : (
+                      <p className="mt-0.5 text-xs text-slate-500">Only the Finance Manager can approve/reject and disburse funds.</p>
+                    )}
+                  </div>
+                  <Badge tone={STATUS_TONE[loan.status]}>
+                    {loan.status === 'manager_review' ? 'In queue' : STATUS_LABEL[loan.status]}
+                  </Badge>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
+          {canVerify || canStaffRecommend || canSupervisorRecommend || canDecide || canDisburse ? (
+            <Card title={isStaffReviewer ? 'Your action' : 'Actions'}>
               {canVerify ? (
                 <div className="flex flex-col gap-3 rounded-xl bg-slate-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-sm font-medium text-slate-900">Step 1 · Verify identity</p>
-                    <p className="text-xs text-slate-500">Confirm the national ID on file matches the person in front of you.</p>
+                    <p className="text-sm font-medium text-slate-900">Step 1 · Verify identity (Regular Staff)</p>
+                    <p className="text-xs text-slate-500">Confirm the national ID on file matches the borrower.</p>
                   </div>
                   <button
                     type="button"
@@ -311,7 +415,7 @@ export function LoanDetailPage() {
                       run(async () => {
                         const updated = await verifyLoan(loan.id, 'Verified in person');
                         setLoan(updated);
-                        setNotice('Identity verified. You can now approve with a final rate.');
+                        setNotice('Identity verified. Review the AI Credit Score and submit to the Supervisor.');
                       })
                     }
                   >
@@ -320,9 +424,122 @@ export function LoanDetailPage() {
                 </div>
               ) : null}
 
+              {canStaffRecommend ? (
+                <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-slate-900">Step 2 · Submit to Supervisor (Regular Staff)</p>
+                    {aiAdvice ? <Badge tone={aiAdvice.tone}>{aiAdvice.label}</Badge> : null}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Based on the AI Credit Scoring advice and borrower verification, submit your recommendation to the Supervisor.
+                  </p>
+                  <Field label="Review note (optional)" htmlFor="staffReviewNote">
+                    <TextInput
+                      id="staffReviewNote"
+                      value={reviewNote}
+                      onChange={(event) => setReviewNote(event.target.value)}
+                      placeholder="Summarize AI score & borrower verification findings"
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn-brand"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await submitStaffRecommendation(loan.id, {
+                            recommendation: 'approve',
+                            note: reviewNote || undefined,
+                          });
+                          setLoan(updated);
+                          setReviewNote('');
+                          setNotice('Submitted to Supervisor with recommendation to APPROVE.');
+                        })
+                      }
+                    >
+                      Recommend Approve → Supervisor
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await submitStaffRecommendation(loan.id, {
+                            recommendation: 'reject',
+                            note: reviewNote || undefined,
+                          });
+                          setLoan(updated);
+                          setReviewNote('');
+                          setNotice('Submitted to Supervisor with recommendation to DENY.');
+                        })
+                      }
+                    >
+                      Recommend Deny → Supervisor
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {canSupervisorRecommend ? (
+                <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+                  <p className="text-sm font-medium text-slate-900">Step 2 · Credibility Check & Suggestion (Supervisor)</p>
+                  <p className="text-xs text-slate-500">
+                    Verify borrower credibility and the Regular Staff recommendation, then forward your suggestion to the Finance Manager for final decision.
+                  </p>
+                  <Field label="Supervisor credibility note (optional)" htmlFor="supervisorReviewNote">
+                    <TextInput
+                      id="supervisorReviewNote"
+                      value={reviewNote}
+                      onChange={(event) => setReviewNote(event.target.value)}
+                      placeholder="Credibility findings and suggestion for Finance Manager"
+                    />
+                  </Field>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="btn-brand"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await submitSupervisorRecommendation(loan.id, {
+                            recommendation: 'approve',
+                            note: reviewNote || undefined,
+                          });
+                          setLoan(updated);
+                          setReviewNote('');
+                          setNotice('Credibility check submitted to Finance Manager (Suggest Approve).');
+                        })
+                      }
+                    >
+                      Suggest Approve → Finance Manager
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const updated = await submitSupervisorRecommendation(loan.id, {
+                            recommendation: 'reject',
+                            note: reviewNote || undefined,
+                          });
+                          setLoan(updated);
+                          setReviewNote('');
+                          setNotice('Credibility check submitted to Finance Manager (Suggest Deny).');
+                        })
+                      }
+                    >
+                      Suggest Deny → Finance Manager
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
               {canDecide ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm font-medium text-slate-900">Step 2 · Decide</p>
+                  <p className="text-sm font-medium text-slate-900">Step 3 · Final Decision (Finance Manager)</p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Interest rate (% per period)" htmlFor="rate">
                       <TextInput
@@ -378,7 +595,7 @@ export function LoanDetailPage() {
 
               {canDisburse ? (
                 <div className="mt-4 space-y-3 rounded-xl border border-slate-200 p-4">
-                  <p className="text-sm font-medium text-slate-900">Step 3 · Disburse</p>
+                  <p className="text-sm font-medium text-slate-900">Step 4 · Disburse (Finance Manager)</p>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <Field label="Method" htmlFor="method">
                       <Select id="method" value={method} onChange={(event) => setMethod(event.target.value as typeof method)}>

@@ -93,11 +93,14 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
   }
 }
 
+export type StaffTier = 'regular' | 'supervisor' | 'finance_manager';
+
 export interface SessionUser {
   id: string;
   email: string;
   fullName: string;
   role: 'borrower' | 'staff' | 'admin';
+  staffTier?: StaffTier | null;
   createdAt?: string;
 }
 

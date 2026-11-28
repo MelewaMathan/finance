@@ -6,7 +6,9 @@ import { listLoans, RISK_LABEL, RISK_TONE, STATUS_LABEL, STATUS_TONE, type LoanS
 
 const TABS: Array<{ key: LoanStatus | 'all'; label: string }> = [
   { key: 'pending', label: 'New' },
-  { key: 'under_review', label: 'Verified' },
+  { key: 'under_review', label: 'Identity Verified' },
+  { key: 'supervisor_review', label: 'Supervisor Review' },
+  { key: 'manager_review', label: 'Manager Review' },
   { key: 'approved', label: 'Approved' },
   { key: 'held', label: 'Held' },
   { key: 'disbursed', label: 'Disbursed' },

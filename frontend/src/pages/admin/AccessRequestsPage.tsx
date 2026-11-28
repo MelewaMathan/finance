@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Badge, Card, PageHeader, Spinner } from '../../components/ui';
-import { DEFAULT_STAFF_INVITE_CODES } from '../../lib/auth';
+import { DEFAULT_STAFF_INVITE_CODES, STAFF_TIER_LABEL } from '../../lib/auth';
+import type { StaffTier } from '../../lib/api';
 import { messageOf } from '../../lib/errors';
 import { formatDateTime } from '../../lib/format';
 import {
@@ -9,6 +10,7 @@ import {
   fetchPendingRequests,
   fetchStaffAccounts,
   setStaffAccountStatus,
+  setStaffAccountTier,
   type ApprovalHistoryRow,
   type PendingRequest,
   type StaffAccount,
@@ -80,6 +82,16 @@ export function AccessRequestsPage() {
           : 'Account updated.',
       );
       if (action === 'approve-account') setTab('pending');
+      await load();
+    } catch (e) {
+      setError(messageOf(e));
+    }
+  }
+
+  async function changeAccountTier(id: string, tier: StaffTier) {
+    try {
+      await setStaffAccountTier(id, tier);
+      setNotice(`Staff tier updated to ${STAFF_TIER_LABEL[tier]}.`);
       await load();
     } catch (e) {
       setError(messageOf(e));
@@ -226,7 +238,17 @@ export function AccessRequestsPage() {
                       {s.lastLoginAt ? ` · last login ${formatDateTime(s.lastLoginAt)}` : ''}
                     </p>
                   </div>
-                  <div className="mt-2 flex items-center gap-3 sm:mt-0">
+                  <div className="mt-2 flex flex-wrap items-center gap-3 sm:mt-0">
+                    <select
+                      aria-label={`Staff tier for ${s.fullName}`}
+                      className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700"
+                      value={s.staffTier ?? 'regular'}
+                      onChange={(e) => void changeAccountTier(s.id, e.target.value as StaffTier)}
+                    >
+                      <option value="regular">Regular Staff</option>
+                      <option value="supervisor">Supervisor</option>
+                      <option value="finance_manager">Finance Manager</option>
+                    </select>
                     <Badge tone={STATUS_TONE[s.status] ?? 'neutral'}>{s.status}</Badge>
                     {s.status === 'pending' && (
                       <button

@@ -25,6 +25,13 @@ export const applyLoanSchema = z.object({
 
 export type ApplyLoanInput = z.infer<typeof applyLoanSchema>;
 
+export const recommendSchema = z.object({
+  recommendation: z.enum(['approve', 'reject']),
+  note: z.string().trim().max(1000).optional(),
+});
+
+export type RecommendInput = z.infer<typeof recommendSchema>;
+
 export const decisionSchema = z
   .object({
     decision: z.enum(['approve', 'reject']),
@@ -50,6 +57,8 @@ export const loanListQuery = paginationSchema.extend({
     .enum([
       'pending',
       'under_review',
+      'supervisor_review',
+      'manager_review',
       'approved',
       'rejected',
       'held',

@@ -12,6 +12,8 @@ import {
   getAgreementFile,
   getLoan,
   listLoans,
+  submitStaffRecommendation,
+  submitSupervisorRecommendation,
   verifyIdentity,
 } from './loan.service';
 import { getInstitutionLoanSettings } from '../admin/loanSettings.service';
@@ -21,10 +23,12 @@ import {
   disburseSchema,
   idParamSchema,
   loanListQuery,
+  recommendSchema,
   type ApplyLoanInput,
   type DecisionInput,
   type DisburseInput,
   type LoanListQuery,
+  type RecommendInput,
 } from './loan.schemas';
 
 /**
@@ -89,6 +93,30 @@ loansRouter.post(
   async (req, res) => {
     const body = req.body as z.infer<typeof verifySchema>;
     res.json({ loan: await verifyIdentity(req.user!, req.params.id as string, body.note, req) });
+  },
+);
+
+loansRouter.post(
+  '/loans/:id/staff-recommend',
+  requireAuth,
+  requireRole('staff'),
+  validate(idParamSchema, 'params'),
+  validate(recommendSchema),
+  async (req, res) => {
+    const loan = await submitStaffRecommendation(req.user!, req.params.id as string, req.body as RecommendInput, req);
+    res.json({ loan });
+  },
+);
+
+loansRouter.post(
+  '/loans/:id/supervisor-recommend',
+  requireAuth,
+  requireRole('staff'),
+  validate(idParamSchema, 'params'),
+  validate(recommendSchema),
+  async (req, res) => {
+    const loan = await submitSupervisorRecommendation(req.user!, req.params.id as string, req.body as RecommendInput, req);
+    res.json({ loan });
   },
 );
 

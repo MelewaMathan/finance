@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, bootstrapSession, setAccessToken, type SessionPayload, type SessionUser } from './api';
+import { api, bootstrapSession, setAccessToken, type SessionPayload, type SessionUser, type StaffTier } from './api';
 import type { AwaitingApprovalResponse } from './loginApproval';
 
 /**
@@ -310,4 +310,10 @@ export const ROLE_LABEL: Record<SessionUser['role'], string> = {
   borrower: 'Borrower',
   staff: 'Staff',
   admin: 'Forensic admin',
+};
+
+export const STAFF_TIER_LABEL: Record<StaffTier, string> = {
+  regular: 'Regular Staff',
+  supervisor: 'Supervisor',
+  finance_manager: 'Finance Manager',
 };

@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 import { queryOne } from '../db/pool';
 import { unauthorized, forbidden } from '../lib/errors';
-import type { Role } from '../types/express';
+import type { Role, StaffTier } from '../types/express';
 
 const accessPayload = z.object({
   sub: z.string().uuid(),
@@ -33,8 +33,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       full_name: string;
       status: string;
       must_change_password: boolean;
+      staff_tier: StaffTier | null;
     }>(
-      'SELECT id, email, role, full_name, status, must_change_password FROM users WHERE id = $1',
+      `SELECT u.id, u.email, u.role, u.full_name, u.status, u.must_change_password, sp.staff_tier
+         FROM users u
+         LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+        WHERE u.id = $1`,
       [parsed.sub],
     );
     if (!user) throw unauthorized('Account no longer exists');
@@ -46,7 +50,13 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
       throw forbidden('Set a new password before using this account');
     }
 
-    req.user = { id: user.id, email: user.email, role: user.role, fullName: user.full_name };
+    req.user = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      fullName: user.full_name,
+      staffTier: user.role === 'staff' ? (user.staff_tier ?? 'regular') : null,
+    };
     next();
   } catch (error) {
     next(error);

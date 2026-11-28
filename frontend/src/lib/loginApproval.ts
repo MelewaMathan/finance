@@ -8,7 +8,7 @@
  *
  * Admin-facing helpers for the approval queue live in the second half.
  */
-import { api } from './api';
+import { api, type StaffTier } from './api';
 
 export interface AwaitingApprovalResponse {
   status: 'awaiting_approval';
@@ -74,6 +74,7 @@ export interface StaffAccount {
   email: string;
   fullName: string;
   status: string;
+  staffTier: StaffTier;
   createdAt: string;
   lastLoginAt: string | null;
 }
@@ -111,5 +112,15 @@ export async function setStaffAccountStatus(
   await api('/auth/staff-accounts/' + encodeURIComponent(id) + '/status', {
     method: 'POST',
     body: { action },
+  });
+}
+
+export async function setStaffAccountTier(
+  id: string,
+  tier: StaffTier,
+): Promise<void> {
+  await api('/auth/staff-accounts/' + encodeURIComponent(id) + '/tier', {
+    method: 'POST',
+    body: { tier },
   });
 }

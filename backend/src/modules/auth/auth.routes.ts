@@ -17,8 +17,9 @@ import {
   listStaffAccounts,
   pollLoginApproval,
   setStaffAccountStatus,
+  setStaffAccountTier,
 } from './login-approval.service';
-import type { Role } from '../../types/express';
+import type { Role, StaffTier } from '../../types/express';
 
 /**
  * Authentication endpoints.
@@ -72,6 +73,10 @@ const decideSchema = z.object({
 
 const staffStatusSchema = z.object({
   action: z.enum(['approve-account', 'suspend', 'reactivate']),
+});
+
+const staffTierSchema = z.object({
+  tier: z.enum(['regular', 'supervisor', 'finance_manager']),
 });
 
 export const authRouter = Router();
@@ -132,14 +137,25 @@ authRouter.post('/refresh', async (req, res) => {
     role: Role;
     created_at: Date;
     must_change_password: boolean;
+    staff_tier: StaffTier | null;
   }>(
-    'SELECT id, email, full_name, role, created_at, must_change_password FROM users WHERE id = $1',
+    `SELECT u.id, u.email, u.full_name, u.role, u.created_at, u.must_change_password, sp.staff_tier
+       FROM users u
+       LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+      WHERE u.id = $1`,
     [rotated.userId],
   );
   if (!user) throw unauthorized('Account no longer exists');
 
   res.json({
-    user: { id: user.id, email: user.email, fullName: user.full_name, role: user.role, createdAt: user.created_at },
+    user: {
+      id: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      role: user.role,
+      staffTier: user.role === 'staff' ? (user.staff_tier ?? 'regular') : null,
+      createdAt: user.created_at,
+    },
     accessToken: signAccessToken({ id: user.id, role: user.role }),
     mustChangePassword: user.must_change_password,
   });
@@ -261,11 +277,28 @@ authRouter.get('/staff-accounts', requireAuth, requireRole('admin'), async (_req
       email: r.email,
       fullName: r.full_name,
       status: r.status,
+      staffTier: r.staff_tier ?? 'regular',
       createdAt: r.created_at,
       lastLoginAt: r.last_login_at,
     })),
   });
 });
+
+authRouter.post(
+  '/staff-accounts/:id/tier',
+  requireAuth,
+  requireRole('admin'),
+  validate(staffTierSchema),
+  async (req, res) => {
+    const { tier } = req.body as z.infer<typeof staffTierSchema>;
+    await setStaffAccountTier(req.user!.id, req.params.id as string, tier, {
+      ip: clientIp(req),
+      userAgent: userAgent(req),
+      requestId: req.requestId,
+    });
+    res.json({ ok: true });
+  },
+);
 
 authRouter.post(
   '/staff-accounts/:id/status',

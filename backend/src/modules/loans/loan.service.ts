@@ -20,14 +20,17 @@ import { detectAnomaly } from '../fraud/anomaly.client';
 import { isChainEnabled, recordOnChain, TX_TYPE } from '../ledger/chain.client';
 import { accruePenalties } from '../repayments/penalty.service';
 import { generateScore, getLatestScore, type ScoreResult } from '../scoring/scoring.service';
-import type { Role } from '../../types/express';
-import type { ApplyLoanInput, DecisionInput, DisburseInput, LoanListQuery } from './loan.schemas';
+import type { Role, StaffTier } from '../../types/express';
+import type { ApplyLoanInput, DecisionInput, DisburseInput, LoanListQuery, RecommendInput } from './loan.schemas';
 
 /**
- * Loan lifecycle.
+ * Loan lifecycle (3-tier staff approval for financial security):
  *
- *   pending -> under_review -> approved -> disbursed -> active -> settled
- *                    \-> rejected             \-> held (fraud gate)
+ *   pending -> under_review (identity verified by Regular Staff)
+ *     -> supervisor_review (Regular Staff reviewed AI score & submitted to Supervisor)
+ *     -> manager_review    (Supervisor checked credibility & suggested to Finance Manager)
+ *     -> approved          (Finance Manager approved & issued agreement)
+ *     -> disbursed         (Finance Manager disbursed) -> active -> settled
  *
  * Money and dates are server-derived. Every transition is audited, and the
  * agreement PDF's SHA-256 is stored so either party can prove later that the
@@ -36,11 +39,14 @@ import type { ApplyLoanInput, DecisionInput, DisburseInput, LoanListQuery } from
 export interface Actor {
   id: string;
   role: Role;
+  staffTier?: StaffTier | null;
 }
 
 type LoanStatus =
   | 'pending'
   | 'under_review'
+  | 'supervisor_review'
+  | 'manager_review'
   | 'approved'
   | 'rejected'
   | 'held'
@@ -68,6 +74,16 @@ interface LoanRecord {
   identity_verified_at: Date | null;
   decided_at: Date | null;
   decision_note: string | null;
+  staff_recommendation: 'approve' | 'reject' | null;
+  staff_recommended_by: string | null;
+  staff_recommended_at: Date | null;
+  staff_recommendation_note: string | null;
+  staff_recommended_by_name?: string | null;
+  supervisor_recommendation: 'approve' | 'reject' | null;
+  supervisor_recommended_by: string | null;
+  supervisor_recommended_at: Date | null;
+  supervisor_recommendation_note: string | null;
+  supervisor_recommended_by_name?: string | null;
   agreement_doc_id: string | null;
   agreement_sha256: string | null;
   score_snapshot_id: string | null;
@@ -117,9 +133,13 @@ const LOAN_SELECT = `
   SELECT l.*,
          b.full_name AS borrower_name,
          b.email     AS borrower_email,
+         sr.full_name AS staff_recommended_by_name,
+         sup.full_name AS supervisor_recommended_by_name,
          (SELECT institution_name FROM institution_loan_settings WHERE id = true) AS institution_name
     FROM loans l
     JOIN users b ON b.id = l.borrower_id
+    LEFT JOIN users sr ON sr.id = l.staff_recommended_by
+    LEFT JOIN users sup ON sup.id = l.supervisor_recommended_by
 `;
 
 const LATERAL_SCORE = `
@@ -392,7 +412,14 @@ export async function listLoans(actor: Actor, filters: LoanListQuery) {
   return {
     items: rows.map((row) => {
       const paid = outstanding.get(row.id) ?? 0;
-      const owes = row.status === 'pending' || row.status === 'rejected' || row.status === 'under_review' ? null : Math.max(0, row.total_repayable_cents - paid);
+      const owes =
+        row.status === 'pending' ||
+        row.status === 'rejected' ||
+        row.status === 'under_review' ||
+        row.status === 'supervisor_review' ||
+        row.status === 'manager_review'
+          ? null
+          : Math.max(0, row.total_repayable_cents - paid);
       return toSummary(row, owes);
     }),
     page: filters.page,
@@ -446,6 +473,24 @@ export async function getLoan(actor: Actor, loanId: string) {
         }
       : null,
     decisionNote: loan.decision_note,
+    staffReview: loan.staff_recommendation
+      ? {
+          recommendation: loan.staff_recommendation,
+          byId: loan.staff_recommended_by,
+          byName: loan.staff_recommended_by_name ?? null,
+          at: loan.staff_recommended_at,
+          note: loan.staff_recommendation_note,
+        }
+      : null,
+    supervisorReview: loan.supervisor_recommendation
+      ? {
+          recommendation: loan.supervisor_recommendation,
+          byId: loan.supervisor_recommended_by,
+          byName: loan.supervisor_recommended_by_name ?? null,
+          at: loan.supervisor_recommended_at,
+          note: loan.supervisor_recommendation_note,
+        }
+      : null,
     identityVerifiedAt: loan.identity_verified_at,
     agreement: loan.agreement_doc_id ? { docId: loan.agreement_doc_id, sha256: loan.agreement_sha256 } : null,
     scoreSnapshotId: loan.score_snapshot_id,
@@ -466,6 +511,10 @@ export async function getLoan(actor: Actor, loanId: string) {
 
 export async function verifyIdentity(actor: Actor, loanId: string, note: string | undefined, req: Request) {
   if (actor.role !== 'staff') throw forbidden('Only institution staff can verify identity');
+  const tier = actor.staffTier ?? 'regular';
+  if (tier !== 'regular') {
+    throw forbidden('Only Regular Staff can perform initial identity verification');
+  }
   const loan = await loadVisibleLoan(actor, loanId);
 
   if (loan.status !== 'pending' && loan.status !== 'under_review') {
@@ -482,6 +531,84 @@ export async function verifyIdentity(actor: Actor, loanId: string, note: string 
     ref: loan.ref,
     borrowerId: loan.borrower_id,
     note: note ?? null,
+  });
+
+  return getLoan(actor, loanId);
+}
+
+export async function submitStaffRecommendation(
+  actor: Actor,
+  loanId: string,
+  input: RecommendInput,
+  req: Request,
+) {
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can submit a review');
+  if ((actor.staffTier ?? 'regular') !== 'regular') {
+    throw forbidden('Only Regular Staff can submit an initial review to the Supervisor');
+  }
+  const loan = await loadVisibleLoan(actor, loanId);
+
+  if (loan.status !== 'pending' && loan.status !== 'under_review') {
+    throw conflict(`Cannot submit staff review on a ${loan.status} loan`);
+  }
+  if (!loan.identity_verified_at) {
+    throw conflict('Verify the borrower identity before submitting to the Supervisor');
+  }
+
+  await query(
+    `UPDATE loans
+        SET staff_recommendation = $2,
+            staff_recommended_by = $3,
+            staff_recommended_at = now(),
+            staff_recommendation_note = $4,
+            status = 'supervisor_review'
+      WHERE id = $1 AND status IN ('pending', 'under_review')`,
+    [loanId, input.recommendation, actor.id, input.note ?? null],
+  );
+
+  await auditRequest(req, 'loan.staff_recommended', 'loan', loanId, {
+    ref: loan.ref,
+    recommendation: input.recommendation,
+    note: input.note ?? null,
+  });
+
+  return getLoan(actor, loanId);
+}
+
+export async function submitSupervisorRecommendation(
+  actor: Actor,
+  loanId: string,
+  input: RecommendInput,
+  req: Request,
+) {
+  if (actor.role !== 'staff') throw forbidden('Only institution staff can submit a supervisor review');
+  if (actor.staffTier !== 'supervisor') {
+    throw forbidden('Only a Supervisor can submit a credibility review to the Finance Manager');
+  }
+  const loan = await loadVisibleLoan(actor, loanId);
+
+  if (loan.status !== 'supervisor_review') {
+    throw conflict(`Loan must be in supervisor_review before supervisor review (currently ${loan.status})`);
+  }
+  if (loan.staff_recommended_by === actor.id) {
+    throw forbidden('Separation of duties: you cannot act as Supervisor on a loan you reviewed as Regular Staff');
+  }
+
+  await query(
+    `UPDATE loans
+        SET supervisor_recommendation = $2,
+            supervisor_recommended_by = $3,
+            supervisor_recommended_at = now(),
+            supervisor_recommendation_note = $4,
+            status = 'manager_review'
+      WHERE id = $1 AND status = 'supervisor_review'`,
+    [loanId, input.recommendation, actor.id, input.note ?? null],
+  );
+
+  await auditRequest(req, 'loan.supervisor_recommended', 'loan', loanId, {
+    ref: loan.ref,
+    recommendation: input.recommendation,
+    note: input.note ?? null,
   });
 
   return getLoan(actor, loanId);
@@ -547,10 +674,16 @@ function renderAgreement(
 
 export async function decide(actor: Actor, loanId: string, input: DecisionInput, req: Request) {
   if (actor.role !== 'staff') throw forbidden('Only institution staff can decide on a loan');
+  if (actor.staffTier !== 'finance_manager') {
+    throw forbidden('Only a Finance Manager can make the final approval or rejection decision');
+  }
   const loan = await loadVisibleLoan(actor, loanId);
 
-  if (loan.status !== 'pending' && loan.status !== 'under_review') {
-    throw conflict(`This loan is already ${loan.status}`);
+  if (loan.status !== 'manager_review') {
+    throw conflict(`Loan must be reviewed by Regular Staff and Supervisor before Finance Manager decision (currently ${loan.status})`);
+  }
+  if (loan.staff_recommended_by === actor.id || loan.supervisor_recommended_by === actor.id) {
+    throw forbidden('Separation of duties: you cannot make the final decision on a loan you reviewed at an earlier stage');
   }
 
   const decidedAt = new Date();
@@ -558,7 +691,7 @@ export async function decide(actor: Actor, loanId: string, input: DecisionInput,
   if (input.decision === 'reject') {
     await query(
       `UPDATE loans SET status = 'rejected', decided_at = $2, decided_by = $3, decision_note = $4
-        WHERE id = $1 AND status IN ('pending','under_review')`,
+        WHERE id = $1 AND status = 'manager_review'`,
       [loanId, decidedAt, actor.id, input.note ?? null],
     );
     await auditRequest(req, 'loan.rejected', 'loan', loanId, {
@@ -655,6 +788,9 @@ export async function decide(actor: Actor, loanId: string, input: DecisionInput,
  */
 export async function disburse(actor: Actor, loanId: string, input: DisburseInput, req: Request) {
   if (actor.role !== 'staff') throw forbidden('Only institution staff can disburse');
+  if (actor.staffTier !== 'finance_manager') {
+    throw forbidden('Only a Finance Manager can disburse loans');
+  }
   const loan = await loadVisibleLoan(actor, loanId);
 
   if (loan.status !== 'approved') {

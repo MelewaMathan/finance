@@ -4,7 +4,7 @@ import { notFound, forbidden, conflict, tooMany } from '../../lib/errors';
 import { recordAudit } from '../audit/audit.service';
 import { issueRefreshToken, signAccessToken } from './token.service';
 import type { RefreshContext } from './token.service';
-import type { Role } from '../../types/express';
+import type { Role, StaffTier } from '../../types/express';
 
 /** How long a pending approval request remains valid (10 minutes). */
 const APPROVAL_TTL_MS = 10 * 60 * 1000;
@@ -108,7 +108,7 @@ export async function pollLoginApproval(
   context: RefreshContext & { requestId?: string },
 ): Promise<
   | { status: 'pending'; expiresAt: Date }
-  | { status: 'approved'; user: { id: string; email: string; fullName: string; role: Role; createdAt: string }; accessToken: string; refresh: { token: string; expiresAt: Date; familyId: string } }
+  | { status: 'approved'; user: { id: string; email: string; fullName: string; role: Role; staffTier: StaffTier | null; createdAt: string }; accessToken: string; refresh: { token: string; expiresAt: Date; familyId: string } }
   | { status: 'denied'; reason: string | null }
   | { status: 'expired' }
   | { status: 'used' }
@@ -171,9 +171,14 @@ export async function pollLoginApproval(
       role: Role;
       status: string;
       created_at: Date;
-    }>('SELECT id, email, full_name, role, status, created_at FROM users WHERE id = $1', [
-      row.staff_user_id,
-    ]);
+      staff_tier: StaffTier | null;
+    }>(
+      `SELECT u.id, u.email, u.full_name, u.role, u.status, u.created_at, sp.staff_tier
+         FROM users u
+         LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+        WHERE u.id = $1`,
+      [row.staff_user_id],
+    );
     const u = user.rows[0];
     if (!u || u.status !== 'active') {
       throw forbidden('Account is no longer active');
@@ -206,6 +211,7 @@ export async function pollLoginApproval(
         email: u.email,
         fullName: u.full_name,
         role: u.role,
+        staffTier: u.role === 'staff' ? (u.staff_tier ?? 'regular') : null,
         createdAt: new Date(u.created_at).toISOString(),
       },
       accessToken: signAccessToken({ id: u.id, role: u.role }),
@@ -344,21 +350,68 @@ export async function decideLoginApproval(
   });
 }
 
-/** Lists all staff users with their account status (for the admin). */
+/** Lists all staff users with their account status and tier (for the admin). */
 export async function listStaffAccounts() {
   return query<{
     id: string;
     email: string;
     full_name: string;
     status: string;
+    staff_tier: StaffTier;
     created_at: Date;
     last_login_at: Date | null;
   }>(
-    `SELECT id, email, full_name, status, created_at, last_login_at
-       FROM users
-      WHERE role = 'staff'
-      ORDER BY created_at DESC`,
+    `SELECT u.id, u.email, u.full_name, u.status,
+            COALESCE(sp.staff_tier, 'regular') AS staff_tier,
+            u.created_at, u.last_login_at
+       FROM users u
+       LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+      WHERE u.role = 'staff'
+      ORDER BY u.created_at DESC`,
   );
+}
+
+export async function setStaffAccountTier(
+  adminId: string,
+  staffUserId: string,
+  newTier: StaffTier,
+  context: RefreshContext & { requestId?: string },
+): Promise<void> {
+  await withTransaction(async (client) => {
+    const result = await client.query<{ id: string; role: string; staff_tier: StaffTier | null }>(
+      `SELECT u.id, u.role, sp.staff_tier
+         FROM users u
+         LEFT JOIN staff_profiles sp ON sp.user_id = u.id
+        WHERE u.id = $1`,
+      [staffUserId],
+    );
+    const user = result.rows[0];
+    if (!user) throw notFound('Staff account not found');
+    if (user.role !== 'staff') throw forbidden('This endpoint is for staff accounts only');
+    if (user.staff_tier === newTier) return;
+
+    await client.query(
+      `INSERT INTO staff_profiles (user_id, staff_tier)
+       VALUES ($1, $2)
+       ON CONFLICT (user_id) DO UPDATE SET staff_tier = EXCLUDED.staff_tier`,
+      [staffUserId, newTier],
+    );
+
+    await recordAudit(
+      {
+        actorUserId: adminId,
+        actorRole: 'admin',
+        action: 'auth.staff_tier_updated',
+        entityType: 'user',
+        entityId: staffUserId,
+        detail: { previousTier: user.staff_tier ?? 'regular', newTier },
+        ip: context.ip ?? null,
+        userAgent: context.userAgent ?? null,
+        requestId: context.requestId ?? null,
+      },
+      client,
+    );
+  });
 }
 
 export async function setStaffAccountStatus(

@@ -5,6 +5,8 @@ import { api, getAccessToken, refreshAccessToken } from './api';
 export type LoanStatus =
   | 'pending'
   | 'under_review'
+  | 'supervisor_review'
+  | 'manager_review'
   | 'approved'
   | 'rejected'
   | 'held'
@@ -109,11 +111,21 @@ export interface LoanFlag {
   detected_at: string;
 }
 
+export interface ReviewStage {
+  recommendation: 'approve' | 'reject';
+  byId: string | null;
+  byName: string | null;
+  at: string | null;
+  note: string | null;
+}
+
 /** The detail view carries the full snapshot, not just the three list columns. */
 export interface LoanDetail extends Omit<LoanSummary, 'score'> {
   collateralDesc: string | null;
   guarantor: { name: string | null; phoneMasked: string | null; credit: number | null } | null;
   decisionNote: string | null;
+  staffReview?: ReviewStage | null;
+  supervisorReview?: ReviewStage | null;
   identityVerifiedAt: string | null;
   agreement: { docId: string; sha256: string } | null;
   scoreSnapshotId: string | null;
@@ -148,8 +160,10 @@ export interface LoanPage {
 }
 
 export const STATUS_LABEL: Record<LoanStatus, string> = {
-  pending: 'Awaiting review',
-  under_review: 'Under review',
+  pending: 'Awaiting staff review',
+  under_review: 'Identity verified',
+  supervisor_review: 'Supervisor review',
+  manager_review: 'Finance Manager review',
   approved: 'Approved',
   rejected: 'Rejected',
   held: 'Held for fraud review',
@@ -163,6 +177,8 @@ export const STATUS_LABEL: Record<LoanStatus, string> = {
 export const STATUS_TONE: Record<LoanStatus, 'neutral' | 'success' | 'warning' | 'danger' | 'info'> = {
   pending: 'warning',
   under_review: 'info',
+  supervisor_review: 'info',
+  manager_review: 'warning',
   approved: 'info',
   rejected: 'danger',
   held: 'danger',
@@ -271,6 +287,28 @@ export async function verifyLoan(loanId: string, note?: string): Promise<LoanDet
   const response = await api<{ loan: LoanDetail }>(`/loans/${loanId}/verify`, {
     method: 'POST',
     body: { note },
+  });
+  return response.loan;
+}
+
+export async function submitStaffRecommendation(
+  loanId: string,
+  payload: { recommendation: 'approve' | 'reject'; note?: string },
+): Promise<LoanDetail> {
+  const response = await api<{ loan: LoanDetail }>(`/loans/${loanId}/staff-recommend`, {
+    method: 'POST',
+    body: payload,
+  });
+  return response.loan;
+}
+
+export async function submitSupervisorRecommendation(
+  loanId: string,
+  payload: { recommendation: 'approve' | 'reject'; note?: string },
+): Promise<LoanDetail> {
+  const response = await api<{ loan: LoanDetail }>(`/loans/${loanId}/supervisor-recommend`, {
+    method: 'POST',
+    body: payload,
   });
   return response.loan;
 }

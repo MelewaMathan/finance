@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Badge, Card, PageHeader, StatCard } from '../../components/ui';
-import { useAuth } from '../../lib/auth';
+import { STAFF_TIER_LABEL, useAuth } from '../../lib/auth';
 import { formatMoney } from '../../lib/format';
 import { listLoans } from '../../lib/loans';
 
@@ -17,7 +17,13 @@ export function StaffDashboard() {
         if (cancelled) return;
         const active = page.items.filter((loan) => loan.status === 'disbursed' || loan.status === 'active');
         setCounts({
-          pending: page.items.filter((loan) => loan.status === 'pending' || loan.status === 'under_review').length,
+          pending: page.items.filter(
+            (loan) =>
+              loan.status === 'pending' ||
+              loan.status === 'under_review' ||
+              loan.status === 'supervisor_review' ||
+              loan.status === 'manager_review',
+          ).length,
           held: page.items.filter((loan) => loan.status === 'held').length,
           active: active.length,
           outstanding: active.reduce((sum, loan) => sum + (loan.outstandingCents ?? 0), 0),
@@ -37,7 +43,7 @@ export function StaffDashboard() {
     <div>
       <PageHeader
         title={`Karibu, ${user.fullName.split(' ')[0]}`}
-        subtitle="Review applications, verify identity, and keep every transaction provable."
+        subtitle={`Signed in as ${STAFF_TIER_LABEL[user.staffTier ?? 'regular']} · 3-tier loan approval security workflow active.`}
         actions={
           <Link to="/staff/applications" className="btn-primary">
             Review applications
